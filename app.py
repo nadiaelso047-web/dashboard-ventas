@@ -5,7 +5,7 @@ from datetime import datetime
 import re
 
 # ============================================
-# AUTENTICACIÓN - La contraseña está en los secretos de Streamlit
+# AUTENTICACIÓN - Lee la contraseña de los secretos
 # ============================================
 
 def autenticar():
@@ -28,7 +28,6 @@ def autenticar():
             password = st.text_input("🔒 Contraseña", type="password")
             
             if st.button("🔓 Ingresar", use_container_width=True):
-                # Leer usuario y contraseña de los secretos
                 USUARIO_CORRECTO = st.secrets.get("USUARIO", "Vanesa")
                 PASSWORD_CORRECTO = st.secrets.get("PASSWORD", "")
                 
@@ -47,7 +46,7 @@ if not autenticar():
     st.stop()
 
 # ============================================
-# DASHBOARD (solo se ve si está autenticado)
+# DASHBOARD
 # ============================================
 
 st.set_page_config(page_title="Dashboard Ventas", layout="wide", page_icon="📊")
