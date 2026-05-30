@@ -72,4 +72,9 @@ with col2:
     st.plotly_chart(fig, use_container_width=True)
 
 st.subheader("📋 Detalle de Transacciones")
-st.dataframe(filtro[["FECHA", "CAJERO", "MONTO", "VENTA_TOTAL"]].head(50))
+# Mostrar solo las columnas que existen
+columnas_disponibles = ["FECHA", "CAJERO", "VENTA_TOTAL"]
+for col in columnas_disponibles:
+    if col not in filtro.columns:
+        columnas_disponibles.remove(col)
+st.dataframe(filtro[columnas_disponibles].head(50))
