@@ -82,7 +82,6 @@ def autenticar():
         return False
     return True
 
-# Verificar autenticación
 if not autenticar():
     st.stop()
 
@@ -99,12 +98,9 @@ st.set_page_config(
 # CSS personalizado
 st.markdown("""
     <style>
-        /* Fondo general */
         .stApp {
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         }
-        
-        /* Tarjetas de métricas */
         .metric-card {
             background: white;
             border-radius: 20px;
@@ -130,8 +126,6 @@ st.markdown("""
             color: #666;
             font-weight: 500;
         }
-        
-        /* Títulos */
         .section-title {
             font-size: 1.5rem;
             font-weight: bold;
@@ -139,8 +133,6 @@ st.markdown("""
             padding-left: 1rem;
             border-left: 4px solid #667eea;
         }
-        
-        /* Header principal */
         .main-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             padding: 2rem;
@@ -158,30 +150,11 @@ st.markdown("""
             color: rgba(255,255,255,0.9);
             margin-top: 0.5rem;
         }
-        
-        /* Sidebar */
-        .css-1d391kg {
-            background: linear-gradient(180deg, #f5f7fa 0%, #e9ecef 100%);
-        }
-        
-        /* Botones */
-        .stButton > button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            padding: 0.5rem 2rem;
-            font-weight: bold;
-            transition: transform 0.2s;
-        }
-        .stButton > button:hover {
-            transform: scale(1.02);
-        }
     </style>
 """, unsafe_allow_html=True)
 
 # ============================================
-# HEADER PRINCIPAL
+# HEADER
 # ============================================
 st.markdown("""
     <div class="main-header">
@@ -221,7 +194,9 @@ def cargar_datos():
     
     df["VENTA_TOTAL"] = df[pagos].sum(axis=1)
     df["CAJERO"] = df["ID CAJERO"].astype(str).str.split("-").str[1]
-    df["MES"] = df["FECHA"].dt.strftime("%B %Y")
+    df["AÑO"] = df["FECHA"].dt.year
+    df["MES_NOMBRE"] = df["FECHA"].dt.strftime("%B")
+    df["MES_ANO"] = df["FECHA"].dt.strftime("%B %Y")
     df["DIA"] = df["FECHA"].dt.date
     return df
 
@@ -229,34 +204,46 @@ with st.spinner("🔄 Cargando datos..."):
     df = cargar_datos()
 
 # ============================================
-# FILTROS (orden cronológico)
+# FILTROS - Año y Mes
 # ============================================
 st.sidebar.markdown("## 🎛️ Panel de control")
 st.sidebar.markdown("---")
 
-# Ordenar meses cronológicamente
-meses_ordenados = sorted(df["MES"].unique(), key=lambda x: datetime.strptime(x, "%B %Y"))
-mes = st.sidebar.selectbox("📅 Mes", meses_ordenados)
+# Obtener años disponibles
+años_disponibles = sorted(df["AÑO"].unique(), reverse=True)
+año_seleccionado = st.sidebar.selectbox("📅 Año", años_disponibles)
 
-cajeros = ["📊 Todos"] + sorted(df["CAJERO"].unique())
-cajero = st.sidebar.selectbox("👤 Cajero", cajeros)
+# Filtrar por año
+df_por_año = df[df["AÑO"] == año_seleccionado]
+
+# Obtener meses disponibles para ese año
+meses_ordenados = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+                   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+meses_disponibles = sorted(df_por_año["MES_NOMBRE"].unique(), key=lambda x: meses_ordenados.index(x))
+
+mes_seleccionado = st.sidebar.selectbox("📅 Mes", meses_disponibles)
+
+# Filtrar por mes
+filtro = df_por_año[df_por_año["MES_NOMBRE"] == mes_seleccionado]
+
+# Filtro de cajero
+cajeros = ["📊 Todos"] + sorted(filtro["CAJERO"].unique())
+cajero_seleccionado = st.sidebar.selectbox("👤 Cajero", cajeros)
+
+if cajero_seleccionado != "📊 Todos":
+    filtro = filtro[filtro["CAJERO"] == cajero_seleccionado]
 
 st.sidebar.markdown("---")
-st.sidebar.info("💡 Los datos se actualizan automáticamente cada 5 minutos")
+st.sidebar.info(f"💡 Datos de {mes_seleccionado} {año_seleccionado}")
 st.sidebar.markdown("---")
 st.sidebar.caption(f"📌 Última carga: {datetime.now().strftime('%H:%M:%S')}")
 
-# Aplicar filtros
-filtro = df[df["MES"] == mes]
-if cajero != "📊 Todos":
-    filtro = filtro[filtro["CAJERO"] == cajero]
-
 if filtro.empty:
-    st.warning("⚠️ No hay datos para los filtros seleccionados")
+    st.warning(f"⚠️ No hay datos para {mes_seleccionado} {año_seleccionado}")
     st.stop()
 
 # ============================================
-# MÉTRICAS PRINCIPALES
+# MÉTRICAS
 # ============================================
 st.markdown('<div class="section-title">📈 Indicadores Clave</div>', unsafe_allow_html=True)
 st.markdown("---")
@@ -303,7 +290,7 @@ with col4:
 st.markdown("---")
 
 # ============================================
-# GRÁFICOS PRINCIPALES
+# GRÁFICOS
 # ============================================
 col_graf1, col_graf2 = st.columns(2)
 
@@ -315,8 +302,7 @@ with col_graf1:
         xaxis_title="Fecha",
         yaxis_title="Venta Total ($)",
         height=400,
-        template="plotly_white",
-        hovermode="x unified"
+        template="plotly_white"
     )
     fig.update_traces(line=dict(width=3, color="#667eea"), marker=dict(size=8, color="#764ba2"))
     st.plotly_chart(fig, use_container_width=True)
@@ -331,7 +317,7 @@ with col_graf2:
         height=400,
         template="plotly_white"
     )
-    fig.update_traces(marker_color="#667eea", texttemplate='$%{value:,.0f}', textposition='outside')
+    fig.update_traces(marker_color="#667eea")
     st.plotly_chart(fig, use_container_width=True)
 
 # ============================================
@@ -344,8 +330,6 @@ col_graf3, col_graf4 = st.columns(2)
 
 with col_graf3:
     st.markdown("### 🥧 Distribución por Medio de Pago")
-    
-    # Calcular medios de pago
     medios = pd.DataFrame({
         "Medio": ["Efectivo", "Tarjeta Crédito", "Tarjeta Débito"],
         "Monto": [
@@ -355,7 +339,6 @@ with col_graf3:
         ]
     })
     medios = medios[medios["Monto"] > 0]
-    
     fig = px.pie(medios, values="Monto", names="Medio", hole=0.4)
     fig.update_layout(height=400, template="plotly_white")
     fig.update_traces(textposition="inside", textinfo="percent+label", marker_colors=["#2ecc71", "#3498db", "#1f77b4"])
@@ -367,7 +350,6 @@ with col_graf4:
         "VENTA_TOTAL": "sum",
         "EFECTIVO RENDIDO": "sum"
     }).head(10).reset_index()
-    
     fig = go.Figure()
     fig.add_trace(go.Bar(name="Venta Total", x=resumen["CAJERO"], y=resumen["VENTA_TOTAL"], marker_color="#667eea"))
     fig.add_trace(go.Bar(name="Efectivo", x=resumen["CAJERO"], y=resumen["EFECTIVO RENDIDO"], marker_color="#2ecc71"))
@@ -381,26 +363,17 @@ with col_graf4:
     st.plotly_chart(fig, use_container_width=True)
 
 # ============================================
-# TABLA DE DATOS
+# TABLA
 # ============================================
 st.markdown('<div class="section-title">📋 Detalle de Transacciones</div>', unsafe_allow_html=True)
 st.markdown("---")
 
-# Formatear la tabla
 tabla = filtro[["FECHA", "CAJERO", "VENTA_TOTAL"]].head(50).copy()
 tabla["VENTA_TOTAL"] = tabla["VENTA_TOTAL"].apply(lambda x: f"${x:,.2f}")
 tabla["FECHA"] = tabla["FECHA"].dt.strftime("%d/%m/%Y")
+tabla.columns = ["Fecha", "Cajero", "Monto"]
 
-st.dataframe(
-    tabla,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "FECHA": "Fecha",
-        "CAJERO": "Cajero",
-        "VENTA_TOTAL": "Monto"
-    }
-)
+st.dataframe(tabla, use_container_width=True, hide_index=True)
 
 # ============================================
 # FOOTER
@@ -410,6 +383,6 @@ st.markdown(f"""
     <div style="text-align: center; color: #999; font-size: 0.8rem; padding: 1rem;">
         📊 Dashboard actualizado automáticamente | 
         🕐 Última sincronización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} |
-        📍 Datos en tiempo real desde Google Sheets
+        📍 Datos desde Google Sheets
     </div>
 """, unsafe_allow_html=True)
