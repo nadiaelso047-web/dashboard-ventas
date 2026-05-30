@@ -6,7 +6,7 @@ from datetime import datetime
 import re
 
 # ============================================
-# AUTENTICACIÓN - TODO EN SECRETS
+# AUTENTICACIÓN
 # ============================================
 
 def autenticar():
@@ -30,14 +30,6 @@ def autenticar():
                     border-radius: 20px;
                     box-shadow: 0 20px 40px rgba(0,0,0,0.2);
                     text-align: center;
-                }
-                .login-card h1 {
-                    color: white;
-                    margin-bottom: 1rem;
-                }
-                .login-card p {
-                    color: rgba(255,255,255,0.8);
-                    margin-bottom: 2rem;
                 }
             </style>
         """, unsafe_allow_html=True)
@@ -86,7 +78,7 @@ if not autenticar():
     st.stop()
 
 # ============================================
-# CONFIGURACIÓN DEL DASHBOARD
+# CONFIGURACIÓN
 # ============================================
 st.set_page_config(
     page_title="Dashboard Ventas",
@@ -95,37 +87,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS personalizado
+# CSS
 st.markdown("""
     <style>
-        .stApp {
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        }
+        .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
         .metric-card {
             background: white;
             border-radius: 20px;
             padding: 1.5rem;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
             text-align: center;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            transition: transform 0.3s ease;
         }
-        .metric-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 35px rgba(0,0,0,0.15);
-        }
+        .metric-card:hover { transform: translateY(-5px); }
         .metric-value {
             font-size: 2.2rem;
             font-weight: bold;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 0.5rem;
         }
-        .metric-label {
-            font-size: 0.9rem;
-            color: #666;
-            font-weight: 500;
-        }
+        .metric-label { font-size: 0.9rem; color: #666; }
         .section-title {
             font-size: 1.5rem;
             font-weight: bold;
@@ -141,15 +123,8 @@ st.markdown("""
             text-align: center;
             color: white;
         }
-        .main-header h1 {
-            color: white;
-            margin: 0;
-            font-size: 2.5rem;
-        }
-        .main-header p {
-            color: rgba(255,255,255,0.9);
-            margin-top: 0.5rem;
-        }
+        .main-header h1 { color: white; margin: 0; font-size: 2.5rem; }
+        .main-header p { color: rgba(255,255,255,0.9); margin-top: 0.5rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -195,8 +170,8 @@ def cargar_datos():
     df["VENTA_TOTAL"] = df[pagos].sum(axis=1)
     df["CAJERO"] = df["ID CAJERO"].astype(str).str.split("-").str[1]
     df["AÑO"] = df["FECHA"].dt.year
-    df["MES_NOMBRE"] = df["FECHA"].dt.strftime("%B")
-    df["MES_ANO"] = df["FECHA"].dt.strftime("%B %Y")
+    df["MES"] = df["FECHA"].dt.month
+    df["MES_NOMBRE"] = df["FECHA"].dt.strftime("%B %Y")
     df["DIA"] = df["FECHA"].dt.date
     return df
 
@@ -204,29 +179,26 @@ with st.spinner("🔄 Cargando datos..."):
     df = cargar_datos()
 
 # ============================================
-# FILTROS - Año y Mes
+# FILTROS
 # ============================================
 st.sidebar.markdown("## 🎛️ Panel de control")
 st.sidebar.markdown("---")
 
-# Obtener años disponibles
+# Años disponibles
 años_disponibles = sorted(df["AÑO"].unique(), reverse=True)
 año_seleccionado = st.sidebar.selectbox("📅 Año", años_disponibles)
 
 # Filtrar por año
 df_por_año = df[df["AÑO"] == año_seleccionado]
 
-# Obtener meses disponibles para ese año
-meses_ordenados = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
-                   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-meses_disponibles = sorted(df_por_año["MES_NOMBRE"].unique(), key=lambda x: meses_ordenados.index(x))
-
+# Meses disponibles (ordenados cronológicamente)
+meses_disponibles = sorted(df_por_año["MES_NOMBRE"].unique(), key=lambda x: datetime.strptime(x, "%B %Y"))
 mes_seleccionado = st.sidebar.selectbox("📅 Mes", meses_disponibles)
 
 # Filtrar por mes
 filtro = df_por_año[df_por_año["MES_NOMBRE"] == mes_seleccionado]
 
-# Filtro de cajero
+# Cajeros
 cajeros = ["📊 Todos"] + sorted(filtro["CAJERO"].unique())
 cajero_seleccionado = st.sidebar.selectbox("👤 Cajero", cajeros)
 
@@ -234,12 +206,12 @@ if cajero_seleccionado != "📊 Todos":
     filtro = filtro[filtro["CAJERO"] == cajero_seleccionado]
 
 st.sidebar.markdown("---")
-st.sidebar.info(f"💡 Datos de {mes_seleccionado} {año_seleccionado}")
+st.sidebar.info(f"💡 Datos de {mes_seleccionado}")
 st.sidebar.markdown("---")
 st.sidebar.caption(f"📌 Última carga: {datetime.now().strftime('%H:%M:%S')}")
 
 if filtro.empty:
-    st.warning(f"⚠️ No hay datos para {mes_seleccionado} {año_seleccionado}")
+    st.warning(f"⚠️ No hay datos para {mes_seleccionado}")
     st.stop()
 
 # ============================================
@@ -298,12 +270,7 @@ with col_graf1:
     st.markdown("### 📈 Evolución Diaria")
     diario = filtro.groupby("DIA")["VENTA_TOTAL"].sum().reset_index()
     fig = px.line(diario, x="DIA", y="VENTA_TOTAL", markers=True)
-    fig.update_layout(
-        xaxis_title="Fecha",
-        yaxis_title="Venta Total ($)",
-        height=400,
-        template="plotly_white"
-    )
+    fig.update_layout(xaxis_title="Fecha", yaxis_title="Venta Total ($)", height=400, template="plotly_white")
     fig.update_traces(line=dict(width=3, color="#667eea"), marker=dict(size=8, color="#764ba2"))
     st.plotly_chart(fig, use_container_width=True)
 
@@ -311,12 +278,7 @@ with col_graf2:
     st.markdown("### 👥 Top 10 Cajeros")
     top = filtro.groupby("CAJERO")["VENTA_TOTAL"].sum().sort_values(ascending=False).head(10).reset_index()
     fig = px.bar(top, x="VENTA_TOTAL", y="CAJERO", orientation="h", text_auto=True)
-    fig.update_layout(
-        xaxis_title="Venta Total ($)",
-        yaxis_title="Cajero",
-        height=400,
-        template="plotly_white"
-    )
+    fig.update_layout(xaxis_title="Venta Total ($)", yaxis_title="Cajero", height=400, template="plotly_white")
     fig.update_traces(marker_color="#667eea")
     st.plotly_chart(fig, use_container_width=True)
 
@@ -346,20 +308,11 @@ with col_graf3:
 
 with col_graf4:
     st.markdown("### 📊 Resumen por Cajero")
-    resumen = filtro.groupby("CAJERO").agg({
-        "VENTA_TOTAL": "sum",
-        "EFECTIVO RENDIDO": "sum"
-    }).head(10).reset_index()
+    resumen = filtro.groupby("CAJERO").agg({"VENTA_TOTAL": "sum", "EFECTIVO RENDIDO": "sum"}).head(10).reset_index()
     fig = go.Figure()
     fig.add_trace(go.Bar(name="Venta Total", x=resumen["CAJERO"], y=resumen["VENTA_TOTAL"], marker_color="#667eea"))
     fig.add_trace(go.Bar(name="Efectivo", x=resumen["CAJERO"], y=resumen["EFECTIVO RENDIDO"], marker_color="#2ecc71"))
-    fig.update_layout(
-        barmode="group",
-        xaxis_title="Cajero",
-        yaxis_title="Monto ($)",
-        height=400,
-        template="plotly_white"
-    )
+    fig.update_layout(barmode="group", xaxis_title="Cajero", yaxis_title="Monto ($)", height=400, template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
 
 # ============================================
