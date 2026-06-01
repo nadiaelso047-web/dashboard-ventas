@@ -1,14 +1,38 @@
 ﻿# Python
 __pycache__/
+<<<<<<< HEAD
 *.pyc
 venv/
 .env
 .streamlit/
+=======
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+.env
+.venv
+
+# Streamlit secrets (NUNCA subir)
+.streamlit/secrets.toml
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
 
 # IDE
 .vscode/
 .idea/
+<<<<<<< HEAD
 
 # Sistema
 .DS_Store
 Thumbs.db
+=======
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600

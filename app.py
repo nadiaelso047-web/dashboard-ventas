@@ -139,7 +139,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================
+<<<<<<< HEAD
 # CARGAR DATOS (ARREGLADO)
+=======
+# CARGAR DATOS
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
 # ============================================
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1IwcjGY4WhkkAABbyCdZmuOsdWrS99XAf7968rcV7GMg/export?format=csv&gid=1898188061"
 
@@ -148,9 +152,13 @@ def cargar_datos():
     df = pd.read_csv(SHEET_URL)
     df = df[~df["ID CAJERO"].astype(str).str.contains("SUBTOTALES", na=False)]
     df = df.dropna(subset=["Columna 1"])
+<<<<<<< HEAD
     
     # FORZAR formato DD/MM/YYYY
     df["FECHA"] = pd.to_datetime(df["Columna 1"], format='%d/%m/%Y', errors='coerce')
+=======
+    df["FECHA"] = pd.to_datetime(df["Columna 1"], errors='coerce')
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
     df = df.dropna(subset=["FECHA"])
     
     def limpiar_numero(x):
@@ -174,7 +182,10 @@ def cargar_datos():
     df["AÑO"] = df["FECHA"].dt.year
     df["MES"] = df["FECHA"].dt.month
     df["MES_NOMBRE"] = df["FECHA"].dt.strftime("%B %Y")
+<<<<<<< HEAD
     df["MES_ORDEN"] = df["FECHA"].dt.year * 100 + df["FECHA"].dt.month
+=======
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
     df["DIA"] = df["FECHA"].dt.date
     return df
 
@@ -182,7 +193,11 @@ with st.spinner("🔄 Cargando datos..."):
     df = cargar_datos()
 
 # ============================================
+<<<<<<< HEAD
 # FILTROS (ARREGLADO)
+=======
+# FILTROS
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
 # ============================================
 st.sidebar.markdown("## 🎛️ Panel de control")
 st.sidebar.markdown("---")
@@ -194,6 +209,7 @@ año_seleccionado = st.sidebar.selectbox("📅 Año", años_disponibles)
 # Filtrar por año
 df_por_año = df[df["AÑO"] == año_seleccionado]
 
+<<<<<<< HEAD
 # Meses disponibles ORDENADOS CORRECTAMENTE
 meses_con_orden = df_por_año[["MES_NOMBRE", "MES_ORDEN"]].drop_duplicates()
 meses_con_orden = meses_con_orden.sort_values("MES_ORDEN")
@@ -203,32 +219,49 @@ if not meses_disponibles:
     st.warning(f"⚠️ No hay datos para el año {año_seleccionado}")
     st.stop()
 
+=======
+# Meses disponibles (ordenados cronológicamente)
+meses_disponibles = sorted(df_por_año["MES_NOMBRE"].unique(), key=lambda x: datetime.strptime(x, "%B %Y"))
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
 mes_seleccionado = st.sidebar.selectbox("📅 Mes", meses_disponibles)
 
 # Filtrar por mes
 filtro = df_por_año[df_por_año["MES_NOMBRE"] == mes_seleccionado]
 
+<<<<<<< HEAD
 # VERIFICAR QUE HAY DATOS
 if filtro.empty:
     st.error(f"❌ No hay datos de ventas para {mes_seleccionado}")
     st.info(f"📌 Los meses disponibles son: {', '.join(meses_disponibles)}")
     st.stop()
 
+=======
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
 # Cajeros
 cajeros = ["📊 Todos"] + sorted(filtro["CAJERO"].unique())
 cajero_seleccionado = st.sidebar.selectbox("👤 Cajero", cajeros)
 
 if cajero_seleccionado != "📊 Todos":
     filtro = filtro[filtro["CAJERO"] == cajero_seleccionado]
+<<<<<<< HEAD
     if filtro.empty:
         st.warning(f"⚠️ No hay datos para el cajero {cajero_seleccionado} en {mes_seleccionado}")
         st.stop()
+=======
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
 
 st.sidebar.markdown("---")
 st.sidebar.info(f"💡 Datos de {mes_seleccionado}")
 st.sidebar.markdown("---")
 st.sidebar.caption(f"📌 Última carga: {datetime.now().strftime('%H:%M:%S')}")
 
+<<<<<<< HEAD
+=======
+if filtro.empty:
+    st.warning(f"⚠️ No hay datos para {mes_seleccionado}")
+    st.stop()
+
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
 # ============================================
 # MÉTRICAS
 # ============================================
@@ -245,7 +278,11 @@ ticket_promedio = filtro["VENTA_TOTAL"].mean()
 with col1:
     st.markdown(f"""
         <div class="metric-card">
+<<<<<<< HEAD
             <div class="metric-value"></div>
+=======
+            <div class="metric-value">${venta_total:,.2f}</div>
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
             <div class="metric-label">💰 Venta Total</div>
         </div>
     """, unsafe_allow_html=True)
@@ -253,7 +290,11 @@ with col1:
 with col2:
     st.markdown(f"""
         <div class="metric-card">
+<<<<<<< HEAD
             <div class="metric-value"></div>
+=======
+            <div class="metric-value">${efectivo:,.2f}</div>
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
             <div class="metric-label">💵 Efectivo</div>
         </div>
     """, unsafe_allow_html=True)
@@ -261,7 +302,11 @@ with col2:
 with col3:
     st.markdown(f"""
         <div class="metric-card">
+<<<<<<< HEAD
             <div class="metric-value"></div>
+=======
+            <div class="metric-value">${tarjeta:,.2f}</div>
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
             <div class="metric-label">💳 Tarjeta</div>
         </div>
     """, unsafe_allow_html=True)
@@ -269,7 +314,11 @@ with col3:
 with col4:
     st.markdown(f"""
         <div class="metric-card">
+<<<<<<< HEAD
             <div class="metric-value"></div>
+=======
+            <div class="metric-value">${ticket_promedio:,.2f}</div>
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
             <div class="metric-label">🎫 Ticket Promedio</div>
         </div>
     """, unsafe_allow_html=True)
@@ -337,7 +386,11 @@ st.markdown('<div class="section-title">📋 Detalle de Transacciones</div>', un
 st.markdown("---")
 
 tabla = filtro[["FECHA", "CAJERO", "VENTA_TOTAL"]].head(50).copy()
+<<<<<<< HEAD
 tabla["VENTA_TOTAL"] = tabla["VENTA_TOTAL"].apply(lambda x: f"")
+=======
+tabla["VENTA_TOTAL"] = tabla["VENTA_TOTAL"].apply(lambda x: f"${x:,.2f}")
+>>>>>>> 6a90870e681109b4c9dec35fcab46c1bc3845600
 tabla["FECHA"] = tabla["FECHA"].dt.strftime("%d/%m/%Y")
 tabla.columns = ["Fecha", "Cajero", "Monto"]
 
