@@ -139,62 +139,83 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================
-# CARGAR DATOS (ARREGLADO)
+# CARGAR DATOS
 # ============================================
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1IwcjGY4WhkkAABbyCdZmuOsdWrS99XAf7968rcV7GMg/export?format=csv&gid=1898188061"
 
 @st.cache_data(ttl=300)
 def cargar_datos():
-    df = pd.read_csv(SHEET_URL)
-    df = df[~df["ID CAJERO"].astype(str).str.contains("SUBTOTALES", na=False)]
-    df = df.dropna(subset=["Columna 1"])
-    
-    # FORZAR formato DD/MM/YYYY
-    df["FECHA"] = pd.to_datetime(df["Columna 1"], format='%d/%m/%Y', errors='coerce')
-    df = df.dropna(subset=["FECHA"])
-    
-    def limpiar_numero(x):
-        if pd.isna(x):
-            return 0
-        if isinstance(x, (int, float)):
-            return float(x)
-        try:
-            s = str(x).replace(".", "").replace(",", ".")
-            return float(re.search(r"[\d\.]+", s).group())
-        except:
-            return 0
-    
-    pagos = ["EFECTIVO RENDIDO", "TARJETA CREDITO", "TARJETA DEBITO"]
-    for col in pagos:
-        if col in df.columns:
-            df[col] = df[col].apply(limpiar_numero)
-    
-    df["VENTA_TOTAL"] = df[pagos].sum(axis=1)
-    df["CAJERO"] = df["ID CAJERO"].astype(str).str.split("-").str[1]
-    df["AÑO"] = df["FECHA"].dt.year
-    df["MES"] = df["FECHA"].dt.month
-    df["MES_NOMBRE"] = df["FECHA"].dt.strftime("%B %Y")
-    df["MES_ORDEN"] = df["FECHA"].dt.year * 100 + df["FECHA"].dt.month
-    df["DIA"] = df["FECHA"].dt.date
-    return df
+    try:
+        df = pd.read_csv(SHEET_URL)
+        
+        # Limpiar datos
+        df = df[~df["ID CAJERO"].astype(str).str.contains("SUBTOTALES", na=False)]
+        df = df.dropna(subset=["Columna 1"])
+        
+        # Convertir fecha
+        df["FECHA"] = pd.to_datetime(df["Columna 1"], format='%d/%m/%Y', errors='coerce')
+        df = df.dropna(subset=["FECHA"])
+        
+        def limpiar_numero(x):
+            if pd.isna(x):
+                return 0
+            if isinstance(x, (int, float)):
+                return float(x)
+            try:
+                s = str(x).replace(".", "").replace(",", ".")
+                nums = re.findall(r"[\d\.]+", s)
+                if nums:
+                    return float(nums[0])
+                return 0
+            except:
+                return 0
+        
+        pagos = ["EFECTIVO RENDIDO", "TARJETA CREDITO", "TARJETA DEBITO"]
+        for col in pagos:
+            if col in df.columns:
+                df[col] = df[col].apply(limpiar_numero)
+        
+        df["VENTA_TOTAL"] = df[pagos].sum(axis=1)
+        
+        # Extraer nombre del cajero
+        df["CAJERO"] = df["ID CAJERO"].astype(str).str.split("-").str[1].fillna("Desconocido")
+        
+        df["AÑO"] = df["FECHA"].dt.year
+        df["MES"] = df["FECHA"].dt.month
+        df["MES_NOMBRE"] = df["FECHA"].dt.strftime("%B %Y")
+        df["MES_ORDEN"] = df["FECHA"].dt.year * 100 + df["FECHA"].dt.month
+        df["DIA"] = df["FECHA"].dt.date
+        
+        return df
+    except Exception as e:
+        st.error(f"Error al cargar datos: {str(e)}")
+        return pd.DataFrame()
 
 with st.spinner("🔄 Cargando datos..."):
     df = cargar_datos()
+    
+    if df.empty:
+        st.error("No se pudieron cargar los datos. Verifica la conexión a Google Sheets.")
+        st.stop()
 
 # ============================================
-# FILTROS (ARREGLADO)
+# FILTROS
 # ============================================
 st.sidebar.markdown("## 🎛️ Panel de control")
 st.sidebar.markdown("---")
 
 # Años disponibles
-años_disponibles = sorted(df["AÑO"].unique(), reverse=True)
+if df.empty or df["AÑO"].isna().all():
+    st.error("No hay datos válidos para mostrar")
+    st.stop()
+
+años_disponibles = sorted(df["AÑO"].dropna().unique(), reverse=True)
 año_seleccionado = st.sidebar.selectbox("📅 Año", años_disponibles)
 
 # Filtrar por año
 df_por_año = df[df["AÑO"] == año_seleccionado]
 
-# Meses disponibles ORDENADOS CORRECTAMENTE
+# Meses disponibles
 meses_con_orden = df_por_año[["MES_NOMBRE", "MES_ORDEN"]].drop_duplicates()
 meses_con_orden = meses_con_orden.sort_values("MES_ORDEN")
 meses_disponibles = meses_con_orden["MES_NOMBRE"].tolist()
@@ -208,14 +229,16 @@ mes_seleccionado = st.sidebar.selectbox("📅 Mes", meses_disponibles)
 # Filtrar por mes
 filtro = df_por_año[df_por_año["MES_NOMBRE"] == mes_seleccionado]
 
-# VERIFICAR QUE HAY DATOS
 if filtro.empty:
     st.error(f"❌ No hay datos de ventas para {mes_seleccionado}")
-    st.info(f"📌 Los meses disponibles son: {', '.join(meses_disponibles)}")
     st.stop()
 
-# Cajeros
-cajeros = ["📊 Todos"] + sorted(filtro["CAJERO"].unique())
+# Cajeros (evitar error si CAJERO no existe)
+if "CAJERO" not in filtro.columns or filtro["CAJERO"].isna().all():
+    cajeros = ["📊 Todos"]
+else:
+    cajeros = ["📊 Todos"] + sorted([c for c in filtro["CAJERO"].unique() if pd.notna(c)])
+
 cajero_seleccionado = st.sidebar.selectbox("👤 Cajero", cajeros)
 
 if cajero_seleccionado != "📊 Todos":
@@ -283,19 +306,25 @@ col_graf1, col_graf2 = st.columns(2)
 
 with col_graf1:
     st.markdown("### 📈 Evolución Diaria")
-    diario = filtro.groupby("DIA")["VENTA_TOTAL"].sum().reset_index()
-    fig = px.line(diario, x="DIA", y="VENTA_TOTAL", markers=True)
-    fig.update_layout(xaxis_title="Fecha", yaxis_title="Venta Total ($)", height=400, template="plotly_white")
-    fig.update_traces(line=dict(width=3, color="#667eea"), marker=dict(size=8, color="#764ba2"))
-    st.plotly_chart(fig, use_container_width=True)
+    try:
+        diario = filtro.groupby("DIA")["VENTA_TOTAL"].sum().reset_index()
+        fig = px.line(diario, x="DIA", y="VENTA_TOTAL", markers=True)
+        fig.update_layout(xaxis_title="Fecha", yaxis_title="Venta Total ($)", height=400, template="plotly_white")
+        fig.update_traces(line=dict(width=3, color="#667eea"), marker=dict(size=8, color="#764ba2"))
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.warning(f"No se pudo generar el gráfico: {str(e)}")
 
 with col_graf2:
     st.markdown("### 👥 Top 10 Cajeros")
-    top = filtro.groupby("CAJERO")["VENTA_TOTAL"].sum().sort_values(ascending=False).head(10).reset_index()
-    fig = px.bar(top, x="VENTA_TOTAL", y="CAJERO", orientation="h", text_auto=True)
-    fig.update_layout(xaxis_title="Venta Total ($)", yaxis_title="Cajero", height=400, template="plotly_white")
-    fig.update_traces(marker_color="#667eea")
-    st.plotly_chart(fig, use_container_width=True)
+    try:
+        top = filtro.groupby("CAJERO")["VENTA_TOTAL"].sum().sort_values(ascending=False).head(10).reset_index()
+        fig = px.bar(top, x="VENTA_TOTAL", y="CAJERO", orientation="h", text_auto=True)
+        fig.update_layout(xaxis_title="Venta Total ($)", yaxis_title="Cajero", height=400, template="plotly_white")
+        fig.update_traces(marker_color="#667eea")
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.warning(f"No se pudo generar el gráfico: {str(e)}")
 
 # ============================================
 # GRÁFICOS ADICIONALES
@@ -307,28 +336,37 @@ col_graf3, col_graf4 = st.columns(2)
 
 with col_graf3:
     st.markdown("### 🥧 Distribución por Medio de Pago")
-    medios = pd.DataFrame({
-        "Medio": ["Efectivo", "Tarjeta Crédito", "Tarjeta Débito"],
-        "Monto": [
-            filtro["EFECTIVO RENDIDO"].sum(),
-            filtro["TARJETA CREDITO"].sum(),
-            filtro["TARJETA DEBITO"].sum()
-        ]
-    })
-    medios = medios[medios["Monto"] > 0]
-    fig = px.pie(medios, values="Monto", names="Medio", hole=0.4)
-    fig.update_layout(height=400, template="plotly_white")
-    fig.update_traces(textposition="inside", textinfo="percent+label", marker_colors=["#2ecc71", "#3498db", "#1f77b4"])
-    st.plotly_chart(fig, use_container_width=True)
+    try:
+        medios = pd.DataFrame({
+            "Medio": ["Efectivo", "Tarjeta Crédito", "Tarjeta Débito"],
+            "Monto": [
+                filtro["EFECTIVO RENDIDO"].sum(),
+                filtro["TARJETA CREDITO"].sum(),
+                filtro["TARJETA DEBITO"].sum()
+            ]
+        })
+        medios = medios[medios["Monto"] > 0]
+        if not medios.empty:
+            fig = px.pie(medios, values="Monto", names="Medio", hole=0.4)
+            fig.update_layout(height=400, template="plotly_white")
+            fig.update_traces(textposition="inside", textinfo="percent+label", marker_colors=["#2ecc71", "#3498db", "#1f77b4"])
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No hay datos para mostrar")
+    except Exception as e:
+        st.warning(f"No se pudo generar el gráfico: {str(e)}")
 
 with col_graf4:
     st.markdown("### 📊 Resumen por Cajero")
-    resumen = filtro.groupby("CAJERO").agg({"VENTA_TOTAL": "sum", "EFECTIVO RENDIDO": "sum"}).head(10).reset_index()
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name="Venta Total", x=resumen["CAJERO"], y=resumen["VENTA_TOTAL"], marker_color="#667eea"))
-    fig.add_trace(go.Bar(name="Efectivo", x=resumen["CAJERO"], y=resumen["EFECTIVO RENDIDO"], marker_color="#2ecc71"))
-    fig.update_layout(barmode="group", xaxis_title="Cajero", yaxis_title="Monto ($)", height=400, template="plotly_white")
-    st.plotly_chart(fig, use_container_width=True)
+    try:
+        resumen = filtro.groupby("CAJERO").agg({"VENTA_TOTAL": "sum", "EFECTIVO RENDIDO": "sum"}).head(10).reset_index()
+        fig = go.Figure()
+        fig.add_trace(go.Bar(name="Venta Total", x=resumen["CAJERO"], y=resumen["VENTA_TOTAL"], marker_color="#667eea"))
+        fig.add_trace(go.Bar(name="Efectivo", x=resumen["CAJERO"], y=resumen["EFECTIVO RENDIDO"], marker_color="#2ecc71"))
+        fig.update_layout(barmode="group", xaxis_title="Cajero", yaxis_title="Monto ($)", height=400, template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.warning(f"No se pudo generar el gráfico: {str(e)}")
 
 # ============================================
 # TABLA
@@ -336,12 +374,14 @@ with col_graf4:
 st.markdown('<div class="section-title">📋 Detalle de Transacciones</div>', unsafe_allow_html=True)
 st.markdown("---")
 
-tabla = filtro[["FECHA", "CAJERO", "VENTA_TOTAL"]].head(50).copy()
-tabla["VENTA_TOTAL"] = tabla["VENTA_TOTAL"].apply(lambda x: f"")
-tabla["FECHA"] = tabla["FECHA"].dt.strftime("%d/%m/%Y")
-tabla.columns = ["Fecha", "Cajero", "Monto"]
-
-st.dataframe(tabla, use_container_width=True, hide_index=True)
+try:
+    tabla = filtro[["FECHA", "CAJERO", "VENTA_TOTAL"]].head(50).copy()
+    tabla["VENTA_TOTAL"] = tabla["VENTA_TOTAL"].apply(lambda x: f"")
+    tabla["FECHA"] = tabla["FECHA"].dt.strftime("%d/%m/%Y")
+    tabla.columns = ["Fecha", "Cajero", "Monto"]
+    st.dataframe(tabla, use_container_width=True, hide_index=True)
+except Exception as e:
+    st.warning(f"No se pudo mostrar la tabla: {str(e)}")
 
 # ============================================
 # FOOTER
@@ -349,7 +389,7 @@ st.dataframe(tabla, use_container_width=True, hide_index=True)
 st.markdown("---")
 st.markdown(f"""
     <div style="text-align: center; color: #999; font-size: 0.8rem; padding: 1rem;">
-        📊 Dashboard actualizado automáticamente |
+        📊 Dashboard actualizado automáticamente | 
         🕐 Última sincronización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} |
         📍 Datos desde Google Sheets
     </div>
