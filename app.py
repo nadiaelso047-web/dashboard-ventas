@@ -4,8 +4,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 import re
-import numpy as np
-from scipy import stats
 
 # ============================================
 # AUTENTICACIÓN
@@ -17,24 +15,6 @@ def autenticar():
     
     if not st.session_state.autenticado:
         st.set_page_config(page_title="Acceso Restringido", page_icon="🔐")
-        
-        st.markdown("""
-            <style>
-                .login-container {
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    min-height: 80vh;
-                }
-                .login-card {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    padding: 2rem;
-                    border-radius: 20px;
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
-                    text-align: center;
-                }
-            </style>
-        """, unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -67,23 +47,14 @@ def autenticar():
                         st.rerun()
                     else:
                         st.session_state.intentos += 1
-                        restantes = 5 - st.session_state.intentos
-                        st.error(f"❌ Usuario o contraseña incorrectos. Intentos restantes: {restantes}")
+                        st.error(f"Credenciales incorrectas. Intentos restantes: {5 - st.session_state.intentos}")
         return False
     return True
 
 if not autenticar():
     st.stop()
 
-# ============================================
-# CONFIGURACIÓN
-# ============================================
-st.set_page_config(
-    page_title="Dashboard Ventas",
-    layout="wide",
-    page_icon="📊",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Dashboard Ventas", layout="wide")
 
 # CSS
 st.markdown("""
@@ -92,43 +63,36 @@ st.markdown("""
         .metric-card {
             background: white;
             border-radius: 20px;
-            padding: 1.5rem;
+            padding: 1rem;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
             text-align: center;
-            transition: transform 0.3s ease;
         }
-        .metric-card:hover { transform: translateY(-5px); }
         .metric-value {
-            font-size: 2.2rem;
+            font-size: 1.8rem;
             font-weight: bold;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .metric-label { font-size: 0.9rem; color: #666; }
         .section-title {
             font-size: 1.5rem;
             font-weight: bold;
-            margin: 1.5rem 0 1rem 0;
+            margin: 1rem 0;
             padding-left: 1rem;
             border-left: 4px solid #667eea;
         }
         .main-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 2rem;
+            padding: 1.5rem;
             border-radius: 20px;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             text-align: center;
             color: white;
         }
-        .main-header h1 { color: white; margin: 0; font-size: 2.5rem; }
-        .main-header p { color: rgba(255,255,255,0.9); margin-top: 0.5rem; }
+        .main-header h1 { color: white; margin: 0; font-size: 2rem; }
     </style>
 """, unsafe_allow_html=True)
 
-# ============================================
-# HEADER
-# ============================================
 st.markdown("""
     <div class="main-header">
         <h1>📊 Dashboard de Ventas</h1>
@@ -137,25 +101,46 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================
-# CARGAR DATOS
+# CARGAR TODAS LAS HOJAS
 # ============================================
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1IwcjGY4WhkkAABbyCdZmuOsdWrS99XAf7968rcV7GMg/export?format=csv&gid=1898188061"
+SHEET_ID = "1IwcjGY4WhkkAABbyCdZmuOsdWrS99XAf7968rcV7GMg"
+BASE_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid="
+
+# IDs de las hojas
+SHEETS = {
+    "ventas": "1898188061",  # INFORME CLOVER.V3
+    "control": "0",           # Control (por confirmar)
+    "payway_base": "1469634760",  # Payway Base Tr
+    "payway_tr": "1392812585",     # Payway Tr
+    "control_z": "513719905",      # Control Z
+    "control_efectivo": "699126555", # Control Efectivo
+    "control_tarjetas": "522240167", # Control Tarjetas
+    "banco_macro": "946108344",      # Banco Macro
+}
 
 @st.cache_data(ttl=300)
-def cargar_datos():
-    df = pd.read_csv(SHEET_URL)
-    df = df[~df["ID CAJERO"].astype(str).str.contains("SUBTOTALES", na=False)]
-    df = df.dropna(subset=["Columna 1"])
+def cargar_hoja(gid):
+    try:
+        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
+        return pd.read_csv(url)
+    except:
+        return pd.DataFrame()
+
+# Cargar datos
+with st.spinner("🔄 Cargando datos..."):
+    df_ventas = cargar_hoja(SHEETS["ventas"])
     
-    # FORZAR formato DD/MM/YYYY
-    df["FECHA"] = pd.to_datetime(df["Columna 1"], format='%d/%m/%Y', errors='coerce')
-    df = df.dropna(subset=["FECHA"])
+    # Limpiar ventas
+    df_ventas = df_ventas[~df_ventas["ID CAJERO"].astype(str).str.contains("SUBTOTALES", na=False)]
+    df_ventas = df_ventas.dropna(subset=["Columna 1"])
+    df_ventas["FECHA"] = pd.to_datetime(df_ventas["Columna 1"], format='%d/%m/%Y', errors='coerce')
+    df_ventas = df_ventas.dropna(subset=["FECHA"])
     
     def limpiar_numero(x):
         if pd.isna(x):
             return 0
         if isinstance(x, (int, float)):
-            return float(x)
+            return float(x) if pd.notna(x) else 0
         try:
             s = str(x).replace(".", "").replace(",", ".")
             nums = re.findall(r"[\d\.]+", s)
@@ -165,343 +150,253 @@ def cargar_datos():
         except:
             return 0
     
-    pagos = ["EFECTIVO RENDIDO", "TARJETA CREDITO", "TARJETA DEBITO"]
-    for col in pagos:
-        if col in df.columns:
-            df[col] = df[col].apply(limpiar_numero)
+    for col in ["EFECTIVO RENDIDO", "TARJETA CREDITO", "TARJETA DEBITO"]:
+        if col in df_ventas.columns:
+            df_ventas[col] = df_ventas[col].apply(limpiar_numero)
     
-    df["VENTA_TOTAL"] = df[pagos].sum(axis=1)
-    df["CAJERO"] = df["ID CAJERO"].astype(str).str.split("-").str[1].fillna("Sin nombre")
-    df["AÑO"] = df["FECHA"].dt.year
-    df["MES"] = df["FECHA"].dt.month
-    df["MES_NOMBRE"] = df["FECHA"].dt.strftime("%B %Y")
-    df["MES_ORDEN"] = df["FECHA"].dt.year * 100 + df["FECHA"].dt.month
-    df["DIA"] = df["FECHA"].dt.date
-    df["DIA_SEMANA"] = df["FECHA"].dt.day_name()
-    return df
-
-with st.spinner("🔄 Cargando datos..."):
-    df = cargar_datos()
+    df_ventas["VENTA_TOTAL"] = df_ventas["EFECTIVO RENDIDO"] + df_ventas["TARJETA CREDITO"] + df_ventas["TARJETA DEBITO"]
+    df_ventas["CAJERO"] = df_ventas["ID CAJERO"].astype(str).str.split("-").str[1].fillna("Sin nombre")
+    df_ventas["AÑO"] = df_ventas["FECHA"].dt.year
+    df_ventas["MES"] = df_ventas["FECHA"].dt.month
+    df_ventas["MES_NOMBRE"] = df_ventas["FECHA"].dt.strftime("%B %Y")
+    df_ventas["MES_ORDEN"] = df_ventas["FECHA"].dt.year * 100 + df_ventas["FECHA"].dt.month
+    df_ventas["DIA"] = df_ventas["FECHA"].dt.date
+    df_ventas["DIA_SEMANA"] = df_ventas["FECHA"].dt.day_name()
     
-    if df.empty:
-        st.error("No se pudieron cargar los datos. Verifica la conexión a Google Sheets.")
-        st.stop()
+    # Cargar otras hojas si existen
+    df_payway = cargar_hoja(SHEETS["payway_tr"])
+    df_control_efectivo = cargar_hoja(SHEETS["control_efectivo"])
+    df_control_tarjetas = cargar_hoja(SHEETS["control_tarjetas"])
 
 # ============================================
 # FILTROS
 # ============================================
 st.sidebar.markdown("## 🎛️ Panel de control")
-st.sidebar.markdown("---")
 
-# Años disponibles
-años_disponibles = sorted(df["AÑO"].unique(), reverse=True)
-año_seleccionado = st.sidebar.selectbox("📅 Año", años_disponibles)
+años = sorted(df_ventas["AÑO"].unique(), reverse=True)
+año = st.sidebar.selectbox("📅 Año", años)
 
-# Filtrar por año
-df_por_año = df[df["AÑO"] == año_seleccionado]
+df_año = df_ventas[df_ventas["AÑO"] == año]
 
-# Meses disponibles
-meses_con_orden = df_por_año[["MES_NOMBRE", "MES_ORDEN"]].drop_duplicates()
-meses_con_orden = meses_con_orden.sort_values("MES_ORDEN")
-meses_disponibles = meses_con_orden["MES_NOMBRE"].tolist()
+meses = df_año[["MES_NOMBRE", "MES_ORDEN"]].drop_duplicates().sort_values("MES_ORDEN")["MES_NOMBRE"].tolist()
+mes = st.sidebar.selectbox("📅 Mes", meses)
 
-if not meses_disponibles:
-    st.warning(f"⚠️ No hay datos para el año {año_seleccionado}")
-    st.stop()
-
-mes_seleccionado = st.sidebar.selectbox("📅 Mes", meses_disponibles)
-
-# Filtrar por mes
-filtro = df_por_año[df_por_año["MES_NOMBRE"] == mes_seleccionado]
+filtro = df_año[df_año["MES_NOMBRE"] == mes]
 
 if filtro.empty:
-    st.error(f"❌ No hay datos de ventas para {mes_seleccionado}")
+    st.error(f"No hay datos para {mes}")
     st.stop()
 
-# Cajeros
-cajeros = ["📊 Todos"] + sorted([c for c in filtro["CAJERO"].unique() if pd.notna(c)])
-cajero_seleccionado = st.sidebar.selectbox("👤 Cajero", cajeros)
+cajeros = ["📊 Todos"] + sorted(filtro["CAJERO"].unique())
+cajero = st.sidebar.selectbox("👤 Cajero", cajeros)
 
-if cajero_seleccionado != "📊 Todos":
-    filtro = filtro[filtro["CAJERO"] == cajero_seleccionado]
-    if filtro.empty:
-        st.warning(f"⚠️ No hay datos para el cajero {cajero_seleccionado} en {mes_seleccionado}")
-        st.stop()
-
-# Filtro por medio de pago
-st.sidebar.markdown("---")
-medios_pago = ["📊 Todos", "💰 Solo Efectivo", "💳 Solo Tarjeta"]
-medio_seleccionado = st.sidebar.selectbox("💵 Medio de pago", medios_pago)
-
-filtro_original = filtro.copy()
-if medio_seleccionado == "💰 Solo Efectivo":
-    filtro = filtro[filtro["EFECTIVO RENDIDO"] > 0]
-elif medio_seleccionado == "💳 Solo Tarjeta":
-    filtro = filtro[(filtro["TARJETA CREDITO"] > 0) | (filtro["TARJETA DEBITO"] > 0)]
-
-if filtro.empty:
-    st.warning(f"⚠️ No hay datos para el filtro seleccionado")
-    st.stop()
+if cajero != "📊 Todos":
+    filtro = filtro[filtro["CAJERO"] == cajero]
 
 st.sidebar.markdown("---")
-st.sidebar.info(f"💡 Datos de {mes_seleccionado}")
-st.sidebar.markdown("---")
-st.sidebar.caption(f"📌 Última carga: {datetime.now().strftime('%H:%M:%S')}")
+st.sidebar.info(f"💡 Datos de {mes}")
+st.sidebar.caption(f"Última carga: {datetime.now().strftime('%H:%M:%S')}")
 
 # ============================================
-# RESUMEN EJECUTIVO
+# PESTAÑAS
 # ============================================
-st.markdown('<div class="section-title">📌 Resumen Ejecutivo</div>', unsafe_allow_html=True)
-st.markdown("---")
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Ventas Diarias", 
+    "💰 Medios de Pago", 
+    "👥 Rendimiento Cajeros",
+    "💳 Tarjetas (Payway)",
+    "🏦 Conciliación Bancaria"
+])
 
-col_r1, col_r2, col_r3 = st.columns(3)
-
-with col_r1:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value">{len(filtro):,}</div>
-            <div class="metric-label">📄 Total Transacciones</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-with col_r2:
-    mejor_cajero = filtro.groupby("CAJERO")["VENTA_TOTAL"].sum().idxmax()
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value">🏆 {mejor_cajero[:20]}</div>
-            <div class="metric-label">Mejor Cajero del período</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-with col_r3:
-    mejor_dia = filtro.groupby("DIA")["VENTA_TOTAL"].sum().idxmax()
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value">📅 {mejor_dia.strftime('%d/%m/%Y')}</div>
-            <div class="metric-label">Mejor día de ventas</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
-
-# ============================================
-# MÉTRICAS PRINCIPALES
-# ============================================
-st.markdown('<div class="section-title">📈 Indicadores Clave</div>', unsafe_allow_html=True)
-st.markdown("---")
-
-col1, col2, col3, col4 = st.columns(4)
-
-venta_total = filtro["VENTA_TOTAL"].sum()
-efectivo = filtro["EFECTIVO RENDIDO"].sum()
-tarjeta = filtro["TARJETA CREDITO"].sum() + filtro["TARJETA DEBITO"].sum()
-ticket_promedio = filtro["VENTA_TOTAL"].mean()
-
-with col1:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value"></div>
-            <div class="metric-label">💰 Venta Total</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value"></div>
-            <div class="metric-label">💵 Efectivo</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value"></div>
-            <div class="metric-label">💳 Tarjeta</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-with col4:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value"></div>
-            <div class="metric-label">🎫 Ticket Promedio</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
-
-# ============================================
-# GRÁFICOS PRINCIPALES
-# ============================================
-col_graf1, col_graf2 = st.columns(2)
-
-with col_graf1:
-    st.markdown("### 📈 Evolución Diaria")
-    diario = filtro.groupby("DIA")["VENTA_TOTAL"].sum().reset_index()
-    fig = px.line(diario, x="DIA", y="VENTA_TOTAL", markers=True)
-    fig.update_layout(xaxis_title="Fecha", yaxis_title="Venta Total ($)", height=400, template="plotly_white")
-    fig.update_traces(line=dict(width=3, color="#667eea"), marker=dict(size=8, color="#764ba2"))
-    st.plotly_chart(fig, use_container_width=True)
-
-with col_graf2:
-    st.markdown("### 👥 Top 10 Cajeros")
-    top = filtro.groupby("CAJERO")["VENTA_TOTAL"].sum().sort_values(ascending=False).head(10).reset_index()
-    fig = px.bar(top, x="VENTA_TOTAL", y="CAJERO", orientation="h", text_auto=True)
-    fig.update_layout(xaxis_title="Venta Total ($)", yaxis_title="Cajero", height=400, template="plotly_white")
-    fig.update_traces(marker_color="#667eea")
-    st.plotly_chart(fig, use_container_width=True)
-
-# ============================================
-# GRÁFICOS ADICIONALES
-# ============================================
-st.markdown('<div class="section-title">📊 Análisis Adicionales</div>', unsafe_allow_html=True)
-st.markdown("---")
-
-col_graf3, col_graf4 = st.columns(2)
-
-with col_graf3:
-    st.markdown("### 🥧 Distribución por Medio de Pago")
-    medios = pd.DataFrame({
-        "Medio": ["Efectivo", "Tarjeta Crédito", "Tarjeta Débito"],
-        "Monto": [
-            filtro["EFECTIVO RENDIDO"].sum(),
-            filtro["TARJETA CREDITO"].sum(),
-            filtro["TARJETA DEBITO"].sum()
-        ]
-    })
-    medios = medios[medios["Monto"] > 0]
-    fig = px.pie(medios, values="Monto", names="Medio", hole=0.4)
+# ==================== TAB 1: VENTAS DIARIAS ====================
+with tab1:
+    st.markdown("### 📈 Evolución de Ventas")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("💰 Venta Total", f"")
+    with col2:
+        st.metric("💵 Efectivo", f"")
+    with col3:
+        st.metric("💳 Tarjeta", f"")
+    with col4:
+        st.metric("🎫 Ticket Promedio", f"")
+    
+    col_g1, col_g2 = st.columns(2)
+    
+    with col_g1:
+        st.markdown("#### Evolución Diaria")
+        diario = filtro.groupby("DIA")["VENTA_TOTAL"].sum().reset_index()
+        fig = px.line(diario, x="DIA", y="VENTA_TOTAL", markers=True)
+        fig.update_layout(height=400, template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col_g2:
+        st.markdown("#### Evolución por Medio de Pago")
+        diario_efectivo = filtro.groupby("DIA")["EFECTIVO RENDIDO"].sum()
+        diario_tarjeta = filtro.groupby("DIA")["TARJETA CREDITO"].sum() + filtro.groupby("DIA")["TARJETA DEBITO"].sum()
+        df_comp = pd.DataFrame({"Fecha": diario_efectivo.index, "Efectivo": diario_efectivo.values, "Tarjeta": diario_tarjeta.values})
+        fig = px.line(df_comp, x="Fecha", y=["Efectivo", "Tarjeta"], markers=True)
+        fig.update_layout(height=400, template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("#### Distribución por Día de la Semana")
+    dias_orden = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    semana = filtro.groupby("DIA_SEMANA")["VENTA_TOTAL"].sum().reindex(dias_orden).reset_index()
+    semana.columns = ["Día", "Venta Total"]
+    fig = px.bar(semana, x="Día", y="Venta Total", text_auto=True)
     fig.update_layout(height=400, template="plotly_white")
-    fig.update_traces(textposition="inside", textinfo="percent+label", marker_colors=["#2ecc71", "#3498db", "#1f77b4"])
     st.plotly_chart(fig, use_container_width=True)
 
-with col_graf4:
-    st.markdown("### 📊 Resumen por Cajero")
-    resumen = filtro.groupby("CAJERO").agg({"VENTA_TOTAL": "sum", "EFECTIVO RENDIDO": "sum"}).head(10).reset_index()
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name="Venta Total", x=resumen["CAJERO"], y=resumen["VENTA_TOTAL"], marker_color="#667eea"))
-    fig.add_trace(go.Bar(name="Efectivo", x=resumen["CAJERO"], y=resumen["EFECTIVO RENDIDO"], marker_color="#2ecc71"))
-    fig.update_layout(barmode="group", xaxis_title="Cajero", yaxis_title="Monto ($)", height=400, template="plotly_white")
-    st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("---")
-
-# ============================================
-# NUEVOS GRÁFICOS
-# ============================================
-st.markdown('<div class="section-title">📊 Análisis Avanzados</div>', unsafe_allow_html=True)
-st.markdown("---")
-
-col_n1, col_n2 = st.columns(2)
-
-with col_n1:
-    st.markdown("### 💳 Evolución Diaria por Medio de Pago")
-    diario_efectivo = filtro.groupby("DIA")["EFECTIVO RENDIDO"].sum()
-    diario_tarjeta = filtro.groupby("DIA")["TARJETA CREDITO"].sum() + filtro.groupby("DIA")["TARJETA DEBITO"].sum()
+# ==================== TAB 2: MEDIOS DE PAGO ====================
+with tab2:
+    st.markdown("### 💰 Análisis de Medios de Pago")
     
-    df_comparativo = pd.DataFrame({
-        "Fecha": diario_efectivo.index,
-        "Efectivo": diario_efectivo.values,
-        "Tarjeta": diario_tarjeta.values
-    })
+    col_m1, col_m2 = st.columns(2)
     
-    fig = px.line(df_comparativo, x="Fecha", y=["Efectivo", "Tarjeta"], markers=True)
-    fig.update_layout(height=400, template="plotly_white", xaxis_title="Fecha", yaxis_title="Monto ($)")
-    st.plotly_chart(fig, use_container_width=True)
-
-with col_n2:
-    st.markdown("### 🎫 Ticket Promedio por Cajero")
-    ticket_cajero = filtro.groupby("CAJERO")["VENTA_TOTAL"].mean().sort_values(ascending=False).head(10).reset_index()
-    fig = px.bar(ticket_cajero, x="VENTA_TOTAL", y="CAJERO", orientation="h", text_auto=True)
-    fig.update_layout(xaxis_title="Ticket Promedio ($)", yaxis_title="Cajero", height=400, template="plotly_white")
-    fig.update_traces(marker_color="#2ecc71")
-    st.plotly_chart(fig, use_container_width=True)
-
-col_n3, col_n4 = st.columns(2)
-
-with col_n3:
-    st.markdown("### 📊 Distribución de Montos")
-    fig = px.histogram(filtro, x="VENTA_TOTAL", nbins=30, title="Frecuencia de montos por transacción")
-    fig.update_layout(xaxis_title="Monto ($)", yaxis_title="Cantidad de transacciones", height=400, template="plotly_white")
-    fig.update_traces(marker_color="#3498db")
-    st.plotly_chart(fig, use_container_width=True)
-
-with col_n4:
-    st.markdown("### 📅 Top 10 Días con Mayores Ventas")
-    top_dias = filtro.groupby("DIA")["VENTA_TOTAL"].sum().sort_values(ascending=False).head(10).reset_index()
-    fig = px.bar(top_dias, x="DIA", y="VENTA_TOTAL", text_auto=True)
-    fig.update_layout(xaxis_title="Fecha", yaxis_title="Venta Total ($)", height=400, template="plotly_white")
-    fig.update_traces(marker_color="#e74c3c")
-    st.plotly_chart(fig, use_container_width=True)
-
-col_n5, col_n6 = st.columns(2)
-
-with col_n5:
-    st.markdown("### 📈 Tendencia de Ventas")
-    diario = filtro.groupby("DIA")["VENTA_TOTAL"].sum().reset_index()
+    with col_m1:
+        st.markdown("#### Distribución por Medio de Pago")
+        medios = pd.DataFrame({
+            "Medio": ["Efectivo", "Tarjeta Crédito", "Tarjeta Débito"],
+            "Monto": [
+                filtro["EFECTIVO RENDIDO"].sum(),
+                filtro["TARJETA CREDITO"].sum(),
+                filtro["TARJETA DEBITO"].sum()
+            ]
+        })
+        medios = medios[medios["Monto"] > 0]
+        fig = px.pie(medios, values="Monto", names="Medio", hole=0.4)
+        fig.update_layout(height=450, template="plotly_white")
+        fig.update_traces(textinfo="percent+label")
+        st.plotly_chart(fig, use_container_width=True)
     
-    if len(diario) > 1:
-        z = np.polyfit(range(len(diario)), diario["VENTA_TOTAL"], 1)
-        p = np.poly1d(z)
-        diario["TENDENCIA"] = p(range(len(diario)))
+    with col_m2:
+        st.markdown("#### Evolución del Ticket Promedio")
+        ticket_diario = filtro.groupby("DIA")["VENTA_TOTAL"].mean().reset_index()
+        fig = px.line(ticket_diario, x="DIA", y="VENTA_TOTAL", markers=True)
+        fig.update_layout(height=450, template="plotly_white", yaxis_title="Ticket Promedio ($)")
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("#### Comparativa Efectivo vs Tarjeta por Día")
+    comp_diario = filtro.groupby("DIA").agg({
+        "EFECTIVO RENDIDO": "sum",
+        "TARJETA CREDITO": "sum",
+        "TARJETA DEBITO": "sum"
+    }).reset_index()
+    comp_diario["Tarjeta Total"] = comp_diario["TARJETA CREDITO"] + comp_diario["TARJETA DEBITO"]
     
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=diario["DIA"], y=diario["VENTA_TOTAL"], mode="lines+markers", name="Ventas Diarias", line=dict(color="#667eea")))
-    if len(diario) > 1:
-        fig.add_trace(go.Scatter(x=diario["DIA"], y=diario["TENDENCIA"], mode="lines", name="Tendencia", line=dict(color="#e74c3c", dash="dash")))
-    fig.update_layout(xaxis_title="Fecha", yaxis_title="Venta Total ($)", height=400, template="plotly_white")
+    fig.add_trace(go.Bar(name="Efectivo", x=comp_diario["DIA"], y=comp_diario["EFECTIVO RENDIDO"], marker_color="#2ecc71"))
+    fig.add_trace(go.Bar(name="Tarjeta", x=comp_diario["DIA"], y=comp_diario["Tarjeta Total"], marker_color="#3498db"))
+    fig.update_layout(barmode="group", height=450, template="plotly_white", xaxis_title="Fecha", yaxis_title="Monto ($)")
     st.plotly_chart(fig, use_container_width=True)
 
-with col_n6:
-    st.markdown("### ⚡ Eficiencia por Cajero")
-    eficiencia = filtro.groupby("CAJERO")["VENTA_TOTAL"].mean().reset_index()
-    eficiencia.columns = ["Cajero", "Ticket Promedio"]
-    fig = px.bar(eficiencia.sort_values("Ticket Promedio", ascending=False).head(10), 
-                 x="Ticket Promedio", y="Cajero", orientation="h", text_auto=True)
-    fig.update_layout(height=400, template="plotly_white", xaxis_title="Ticket Promedio ($)", yaxis_title="Cajero")
-    fig.update_traces(marker_color="#f39c12")
-    st.plotly_chart(fig, use_container_width=True)
+# ==================== TAB 3: RENDIMIENTO CAJEROS ====================
+with tab3:
+    st.markdown("### 👥 Análisis por Cajero")
+    
+    col_c1, col_c2 = st.columns(2)
+    
+    with col_c1:
+        st.markdown("#### Top 10 Venta Total")
+        top_venta = filtro.groupby("CAJERO")["VENTA_TOTAL"].sum().sort_values(ascending=False).head(10).reset_index()
+        fig = px.bar(top_venta, x="VENTA_TOTAL", y="CAJERO", orientation="h", text_auto=True)
+        fig.update_layout(height=400, template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col_c2:
+        st.markdown("#### Top 10 Ticket Promedio")
+        top_ticket = filtro.groupby("CAJERO")["VENTA_TOTAL"].mean().sort_values(ascending=False).head(10).reset_index()
+        fig = px.bar(top_ticket, x="VENTA_TOTAL", y="CAJERO", orientation="h", text_auto=True)
+        fig.update_layout(height=400, template="plotly_white", xaxis_title="Ticket Promedio ($)")
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("#### Resumen Detallado por Cajero")
+    resumen = filtro.groupby("CAJERO").agg({
+        "VENTA_TOTAL": ["sum", "mean", "count"],
+        "EFECTIVO RENDIDO": "sum",
+        "TARJETA CREDITO": "sum",
+        "TARJETA DEBITO": "sum"
+    }).round(2)
+    resumen.columns = ["Venta Total", "Ticket Promedio", "Transacciones", "Efectivo", "Tarjeta Crédito", "Tarjeta Débito"]
+    resumen = resumen.sort_values("Venta Total", ascending=False)
+    resumen["% del Total"] = (resumen["Venta Total"] / resumen["Venta Total"].sum() * 100).round(1)
+    
+    for col in ["Venta Total", "Ticket Promedio", "Efectivo", "Tarjeta Crédito", "Tarjeta Débito"]:
+        resumen[col] = resumen[col].apply(lambda x: f"")
+    
+    st.dataframe(resumen, use_container_width=True)
 
-st.markdown("---")
+# ==================== TAB 4: TARJETAS (PAYWAY) ====================
+with tab4:
+    st.markdown("### 💳 Análisis de Transacciones con Tarjeta (Payway)")
+    
+    if not df_payway.empty:
+        # Limpiar datos de Payway
+        df_payway.columns = df_payway.iloc[0]
+        df_payway = df_payway[1:].copy()
+        df_payway["FECHA_VENTA"] = pd.to_datetime(df_payway["FECHA DE VENTA"], errors='coerce')
+        df_payway = df_payway.dropna(subset=["FECHA_VENTA"])
+        
+        for col in ["SUM of MONTO BRUTO", "SUM of MONTO NETO", "SUM of TOTAL COSTO DE SERVICIO"]:
+            if col in df_payway.columns:
+                df_payway[col] = pd.to_numeric(df_payway[col], errors='coerce').fillna(0)
+        
+        df_payway["AÑO"] = df_payway["FECHA_VENTA"].dt.year
+        df_payway["MES"] = df_payway["FECHA_VENTA"].dt.month
+        
+        payway_filtro = df_payway[df_payway["AÑO"] == año]
+        if not payway_filtro.empty:
+            payway_meses = payway_filtro.groupby("MES")["SUM of MONTO BRUTO"].sum()
+            
+            col_p1, col_p2, col_p3 = st.columns(3)
+            with col_p1:
+                st.metric("💰 Monto Bruto Total", f"")
+            with col_p2:
+                st.metric("📊 Monto Neto Total", f"")
+            with col_p3:
+                st.metric("🔧 Costo de Servicio", f"")
+            
+            st.markdown("#### Evolución Mensual Payway")
+            fig = px.bar(x=payway_meses.index, y=payway_meses.values, text_auto=True)
+            fig.update_layout(xaxis_title="Mes", yaxis_title="Monto Bruto ($)", height=400, template="plotly_white")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No hay datos de Payway para el período seleccionado")
+    else:
+        st.info("No se pudieron cargar los datos de Payway")
 
-# ============================================
-# TABLA DETALLADA POR CAJERO
-# ============================================
-st.markdown('<div class="section-title">📋 Resumen Detallado por Cajero</div>', unsafe_allow_html=True)
-st.markdown("---")
-
-resumen_cajero = filtro.groupby("CAJERO").agg({
-    "VENTA_TOTAL": ["sum", "mean", "count"],
-    "EFECTIVO RENDIDO": "sum",
-    "TARJETA CREDITO": "sum",
-    "TARJETA DEBITO": "sum"
-}).round(2)
-
-resumen_cajero.columns = ["Venta Total", "Ticket Promedio", "Cantidad Transacciones", "Efectivo", "Tarjeta Crédito", "Tarjeta Débito"]
-resumen_cajero = resumen_cajero.sort_values("Venta Total", ascending=False)
-resumen_cajero["% del Total"] = (resumen_cajero["Venta Total"] / resumen_cajero["Venta Total"].sum() * 100).round(1)
-
-# Formatear como moneda
-for col in ["Venta Total", "Ticket Promedio", "Efectivo", "Tarjeta Crédito", "Tarjeta Débito"]:
-    resumen_cajero[col] = resumen_cajero[col].apply(lambda x: f"")
-
-st.dataframe(resumen_cajero, use_container_width=True)
-
-st.markdown("---")
-
-# ============================================
-# TABLA DE TRANSACCIONES
-# ============================================
-st.markdown('<div class="section-title">📋 Detalle de Transacciones</div>', unsafe_allow_html=True)
-st.markdown("---")
-
-tabla = filtro[["FECHA", "CAJERO", "VENTA_TOTAL"]].head(50).copy()
-tabla["VENTA_TOTAL"] = tabla["VENTA_TOTAL"].apply(lambda x: f"")
-tabla["FECHA"] = tabla["FECHA"].dt.strftime("%d/%m/%Y")
-tabla.columns = ["Fecha", "Cajero", "Monto"]
-
-st.dataframe(tabla, use_container_width=True, hide_index=True)
+# ==================== TAB 5: CONCILIACIÓN BANCARIA ====================
+with tab5:
+    st.markdown("### 🏦 Control de Depósitos - Banco Macro")
+    
+    if not df_control_efectivo.empty:
+        st.markdown("#### Resumen de Efectivo por Cajero")
+        df_control_efectivo.columns = df_control_efectivo.iloc[0]
+        df_control_efectivo = df_control_efectivo[1:].copy()
+        
+        if "ID CAJERO" in df_control_efectivo.columns and "SUM of EFECTIVO RENDIDO" in df_control_efectivo.columns:
+            df_efectivo = df_control_efectivo[["ID CAJERO", "SUM of EFECTIVO RENDIDO"]].dropna()
+            df_efectivo = df_efectivo[df_efectivo["ID CAJERO"] != "Total general"]
+            fig = px.bar(df_efectivo, x="SUM of EFECTIVO RENDIDO", y="ID CAJERO", orientation="h", text_auto=True)
+            fig.update_layout(height=400, template="plotly_white", xaxis_title="Monto Efectivo ($)")
+            st.plotly_chart(fig, use_container_width=True)
+    
+    if not df_control_tarjetas.empty:
+        st.markdown("#### Resumen de Tarjetas por Día")
+        df_control_tarjetas.columns = df_control_tarjetas.iloc[0]
+        df_control_tarjetas = df_control_tarjetas[1:].copy()
+        
+        if "Columna 1" in df_control_tarjetas.columns and "SUM of TR" in df_control_tarjetas.columns:
+            df_tarjetas = df_control_tarjetas[["Columna 1", "SUM of TR"]].dropna()
+            df_tarjetas["Columna 1"] = pd.to_datetime(df_tarjetas["Columna 1"], errors='coerce')
+            df_tarjetas = df_tarjetas.dropna()
+            df_tarjetas = df_tarjetas[df_tarjetas["Columna 1"].dt.year == año]
+            
+            if not df_tarjetas.empty:
+                fig = px.line(df_tarjetas, x="Columna 1", y="SUM of TR", markers=True)
+                fig.update_layout(height=400, template="plotly_white", xaxis_title="Fecha", yaxis_title="Monto Tarjetas ($)")
+                st.plotly_chart(fig, use_container_width=True)
 
 # ============================================
 # FOOTER
@@ -509,8 +404,7 @@ st.dataframe(tabla, use_container_width=True, hide_index=True)
 st.markdown("---")
 st.markdown(f"""
     <div style="text-align: center; color: #999; font-size: 0.8rem; padding: 1rem;">
-        📊 Dashboard actualizado automáticamente | 
-        🕐 Última sincronización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} |
-        📍 Datos desde Google Sheets
+        📊 Dashboard actualizado automáticamente |
+        🕐 Última sincronización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
     </div>
 """, unsafe_allow_html=True)
