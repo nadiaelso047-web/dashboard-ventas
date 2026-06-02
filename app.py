@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
-import re
 
 # ============================================
 # AUTENTICACIÓN
@@ -71,12 +70,17 @@ st.markdown("""
             color: white;
         }
         .main-header h1 { color: white; margin: 0; font-size: 2rem; }
-        .success-card {
-            background: #d4edda;
-            border-left: 4px solid #28a745;
-            padding: 0.8rem;
-            border-radius: 10px;
-            margin: 0.5rem 0;
+        .metric-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
         }
         .section-title {
             font-size: 1.5rem;
@@ -91,7 +95,7 @@ st.markdown("""
 st.markdown("""
     <div class="main-header">
         <h1>🏆 DASHBOARD DE VENTAS</h1>
-        <p>Análisis y conciliación bancaria</p>
+        <p>Análisis y conciliación bancaria - Mayo 2026</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -100,233 +104,203 @@ st.markdown("""
 # ============================================
 SHEET_ID = "1IwcjGY4WhkkAABbyCdZmuOsdWrS99XAf7968rcV7GMg"
 
-SHEETS = {
-    "control": "1996710268",
-    "payway_tr": "1397161452",
-    "control_efectivo": "1370399946",
-    "control_tarjetas": "2080576930",
-    "control_banco_macro": "772941566",
-}
-
 @st.cache_data(ttl=300)
 def cargar_hoja(gid):
     try:
         url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
-        df = pd.read_csv(url)
-        return df
+        return pd.read_csv(url)
     except Exception as e:
         return pd.DataFrame()
 
 # ============================================
-# CARGA DE DATOS
+# CARGA Y PROCESAMIENTO
 # ============================================
 with st.spinner("🔄 Cargando datos..."):
-    df_raw_control = cargar_hoja(SHEETS["control"])
-    df_raw_payway = cargar_hoja(SHEETS["payway_tr"])
-    df_raw_efectivo = cargar_hoja(SHEETS["control_efectivo"])
-    df_raw_tarjetas = cargar_hoja(SHEETS["control_tarjetas"])
-    df_raw_banco = cargar_hoja(SHEETS["control_banco_macro"])
+    # Cargar todas las hojas
+    df_control_raw = cargar_hoja("1996710268")
+    df_payway_raw = cargar_hoja("1397161452")
+    df_efectivo_raw = cargar_hoja("1370399946")
+    df_tarjetas_raw = cargar_hoja("2080576930")
+    df_banco_raw = cargar_hoja("772941566")
+
+# --- Procesar Control (conciliación diaria) ---
+df_control = df_control_raw.copy()
+df_control = df_control[df_control["Columna 1"].astype(str).str.contains("2026-05", na=False)]
+df_control["FECHA"] = pd.to_datetime(df_control["Columna 1"], format='%d/%m/%Y', errors='coerce')
+df_control = df_control.dropna(subset=["FECHA"])
+df_control["Ventas_TR"] = pd.to_numeric(df_control["SUM de TR"], errors='coerce').fillna(0)
+df_control["Payway_Bruto"] = pd.to_numeric(df_control["Payway Bruto"], errors='coerce').fillna(0)
+df_control["Banco_Macro"] = pd.to_numeric(df_control["Banco Macro"], errors='coerce').fillna(0)
+df_control["Diferencia"] = df_control["Ventas_TR"] - df_control["Banco_Macro"]
+df_control["%_Conciliacion"] = (df_control["Banco_Macro"] / df_control["Ventas_TR"] * 100).fillna(0).round(1)
+
+# --- Procesar Payway ---
+df_payway = df_payway_raw.copy()
+df_payway["FECHA"] = pd.to_datetime(df_payway["FECHA DE VENTA"], errors='coerce')
+df_payway = df_payway.dropna(subset=["FECHA"])
+df_payway["MONTO_BRUTO"] = pd.to_numeric(df_payway["SUM de MONTO BRUTO"], errors='coerce').fillna(0)
+df_payway["MONTO_NETO"] = pd.to_numeric(df_payway["SUM de MONTO NETO"], errors='coerce').fillna(0)
+df_payway["COMISION"] = pd.to_numeric(df_payway["SUM de TOTAL COSTO DE SERVICIO"], errors='coerce').fillna(0)
+
+# --- Procesar Efectivo ---
+df_efectivo = df_efectivo_raw.copy()
+df_efectivo = df_efectivo[~df_efectivo["ID CAJERO"].astype(str).str.contains("Total", na=False)]
+df_efectivo["MONTO"] = pd.to_numeric(df_efectivo["SUM de EFECTIVO RENDIDO"], errors='coerce').fillna(0)
+
+# --- Procesar Tarjetas ---
+df_tarjetas = df_tarjetas_raw.copy()
+df_tarjetas = df_tarjetas[df_tarjetas["Columna 1"].astype(str).str.contains("2026-05", na=False)]
+df_tarjetas["FECHA"] = pd.to_datetime(df_tarjetas["Columna 1"], format='%d/%m/%Y', errors='coerce')
+df_tarjetas = df_tarjetas.dropna(subset=["FECHA"])
+df_tarjetas["MONTO"] = pd.to_numeric(df_tarjetas["SUM de TR"], errors='coerce').fillna(0)
+
+# --- Procesar Banco Macro ---
+df_banco = df_banco_raw.copy()
+df_banco["FECHA"] = pd.to_datetime(df_banco["Fecha"], errors='coerce')
+df_banco = df_banco.dropna(subset=["FECHA"])
+df_banco["IMPORTE"] = pd.to_numeric(df_banco["SUM de Importe"], errors='coerce').fillna(0)
 
 # ============================================
-# FUNCIÓN PARA MOSTRAR INFO DE CADA HOJA
-# ============================================
-
-def mostrar_info_hoja(df, nombre):
-    """Muestra información de una hoja para depuración"""
-    if df.empty:
-        st.warning(f"⚠️ Hoja '{nombre}' está vacía")
-        return None
-    else:
-        with st.expander(f"📄 Ver estructura de '{nombre}'"):
-            st.write(f"**Filas:** {len(df)}")
-            st.write(f"**Columnas:** {list(df.columns)}")
-            st.dataframe(df.head(3), use_container_width=True)
-        return df
-
-st.markdown('<div class="section-title">📋 ESTRUCTURA DE DATOS</div>', unsafe_allow_html=True)
-
-# Mostrar estructura de cada hoja (solo para depuración)
-df_control = mostrar_info_hoja(df_raw_control, "Control")
-df_payway = mostrar_info_hoja(df_raw_payway, "Payway Tr")
-df_efectivo = mostrar_info_hoja(df_raw_efectivo, "Control Efectivo")
-df_tarjetas = mostrar_info_hoja(df_raw_tarjetas, "Control Tarjetas")
-df_banco = mostrar_info_hoja(df_raw_banco, "Control Banco Macro")
-
-# ============================================
-# PROCESAMIENTO DE CADA HOJA
-# ============================================
-
-# --- 1. Control (Conciliación) ---
-control_proc = pd.DataFrame()
-if df_control is not None and len(df_control) > 2:
-    # La primera fila suele ser encabezados en Google Sheets exportado
-    # Buscamos la fila que contiene "SUBTOTALES" o fechas
-    for idx, row in df_control.iterrows():
-        row_str = " ".join(row.astype(str))
-        if "SUBTOTALES" in row_str or "2026-05" in row_str:
-            if idx > 0:
-                # Usar fila anterior como encabezados
-                df_control.columns = df_control.iloc[idx-1]
-                df_control = df_control[idx:].reset_index(drop=True)
-            break
-    
-    # Buscar columna de fechas
-    col_fecha = None
-    for col in df_control.columns:
-        if "fecha" in str(col).lower() or "columna" in str(col).lower() or df_control[col].astype(str).str.contains("2026-05").any():
-            col_fecha = col
-            break
-    
-    if col_fecha:
-        df_control["FECHA"] = pd.to_datetime(df_control[col_fecha], errors='coerce')
-        df_control = df_control.dropna(subset=["FECHA"])
-        
-        # Buscar columnas numéricas (posibles montos)
-        for col in df_control.columns:
-            if col != col_fecha:
-                df_control[col] = pd.to_numeric(df_control[col], errors='coerce').fillna(0)
-        
-        control_proc = df_control
-        st.success(f"✅ Control: {len(control_proc)} filas procesadas")
-
-# --- 2. Payway ---
-payway_proc = pd.DataFrame()
-if df_payway is not None and len(df_payway) > 2:
-    # Buscar fila de encabezados
-    for idx, row in df_payway.iterrows():
-        row_str = " ".join(row.astype(str))
-        if "FECHA" in row_str or "MONTO" in row_str:
-            df_payway.columns = df_payway.iloc[idx]
-            df_payway = df_payway[idx+1:].reset_index(drop=True)
-            break
-    
-    # Buscar columna de fecha
-    for col in df_payway.columns:
-        if "fecha" in str(col).lower():
-            df_payway["FECHA"] = pd.to_datetime(df_payway[col], errors='coerce')
-            break
-    
-    if "FECHA" in df_payway.columns:
-        df_payway = df_payway.dropna(subset=["FECHA"])
-        payway_proc = df_payway
-        st.success(f"✅ Payway: {len(payway_proc)} filas procesadas")
-
-# --- 3. Efectivo ---
-efectivo_proc = pd.DataFrame()
-if df_efectivo is not None and len(df_efectivo) > 2:
-    # Buscar fila de encabezados
-    for idx, row in df_efectivo.iterrows():
-        row_str = " ".join(row.astype(str))
-        if "ID CAJERO" in row_str or "CAJERO" in row_str:
-            df_efectivo.columns = df_efectivo.iloc[idx]
-            df_efectivo = df_efectivo[idx+1:].reset_index(drop=True)
-            break
-    
-    # Buscar columnas de cajero y monto
-    col_cajero = None
-    col_monto = None
-    for col in df_efectivo.columns:
-        if "cajero" in str(col).lower() or "id" in str(col).lower():
-            col_cajero = col
-        if "efectivo" in str(col).lower() or "monto" in str(col).lower():
-            col_monto = col
-    
-    if col_cajero and col_monto:
-        df_efectivo[col_monto] = pd.to_numeric(df_efectivo[col_monto], errors='coerce').fillna(0)
-        df_efectivo = df_efectivo[~df_efectivo[col_cajero].astype(str).str.contains("Total", na=False)]
-        efectivo_proc = df_efectivo[[col_cajero, col_monto]].copy()
-        efectivo_proc.columns = ["Cajero", "Monto"]
-        st.success(f"✅ Efectivo: {len(efectivo_proc)} filas procesadas")
-
-# --- 4. Tarjetas ---
-tarjetas_proc = pd.DataFrame()
-if df_tarjetas is not None and len(df_tarjetas) > 2:
-    for idx, row in df_tarjetas.iterrows():
-        row_str = " ".join(row.astype(str))
-        if "Columna 1" in row_str or "FECHA" in row_str:
-            df_tarjetas.columns = df_tarjetas.iloc[idx]
-            df_tarjetas = df_tarjetas[idx+1:].reset_index(drop=True)
-            break
-    
-    # Buscar columna de fecha
-    col_fecha = None
-    for col in df_tarjetas.columns:
-        if df_tarjetas[col].astype(str).str.contains("2026-05").any():
-            col_fecha = col
-            break
-    
-    if col_fecha:
-        df_tarjetas["FECHA"] = pd.to_datetime(df_tarjetas[col_fecha], errors='coerce')
-        df_tarjetas = df_tarjetas.dropna(subset=["FECHA"])
-        
-        # Buscar columna de monto (la primera numérica después de fecha)
-        for col in df_tarjetas.columns:
-            if col != col_fecha:
-                df_tarjetas["MONTO"] = pd.to_numeric(df_tarjetas[col], errors='coerce').fillna(0)
-                if df_tarjetas["MONTO"].sum() > 0:
-                    break
-        
-        tarjetas_proc = df_tarjetas[["FECHA", "MONTO"]].copy()
-        st.success(f"✅ Tarjetas: {len(tarjetas_proc)} filas procesadas")
-
-# ============================================
-# MÉTRICAS
+# MÉTRICAS PRINCIPALES
 # ============================================
 st.markdown('<div class="section-title">📊 MÉTRICAS CLAVE</div>', unsafe_allow_html=True)
 
-total_tarjetas = tarjetas_proc["MONTO"].sum() if not tarjetas_proc.empty else 0
-total_efectivo = efectivo_proc["Monto"].sum() if not efectivo_proc.empty else 0
+col1, col2, col3, col4 = st.columns(4)
 
-col1, col2, col3 = st.columns(3)
+total_tarjetas = df_tarjetas["MONTO"].sum()
+total_efectivo = df_efectivo["MONTO"].sum()
+total_payway_bruto = df_payway["MONTO_BRUTO"].sum()
+total_payway_comision = df_payway["COMISION"].sum()
+
 with col1:
-    st.metric("💳 Ventas con Tarjeta", f"")
+    st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value"></div>
+            <div>💳 Ventas con Tarjeta</div>
+        </div>
+    """, unsafe_allow_html=True)
+
 with col2:
-    st.metric("💵 Efectivo Rendido", f"")
+    st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value"></div>
+            <div>💵 Efectivo Rendido</div>
+        </div>
+    """, unsafe_allow_html=True)
+
 with col3:
-    st.metric("💰 Total General", f"")
+    st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value"></div>
+            <div>💰 Payway Bruto</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+with col4:
+    st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value"></div>
+            <div>🔧 Comisiones Payway</div>
+        </div>
+    """, unsafe_allow_html=True)
 
 # ============================================
-# PESTAÑAS
+# GRÁFICOS
 # ============================================
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Control", "💳 Payway", "👥 Efectivo", "💵 Tarjetas", "🏦 Banco Macro"
-])
 
-with tab1:
-    if not control_proc.empty:
-        st.dataframe(control_proc, use_container_width=True)
-    else:
-        st.info("No hay datos de Control disponibles")
+# GRÁFICO 1: Evolución de Ventas vs Depósitos
+st.markdown('<div class="section-title">📈 EVOLUCIÓN DIARIA</div>', unsafe_allow_html=True)
 
-with tab2:
-    if not payway_proc.empty:
-        st.dataframe(payway_proc, use_container_width=True)
-    else:
-        st.info("No hay datos de Payway disponibles")
+fig1 = go.Figure()
+fig1.add_trace(go.Scatter(x=df_control["FECHA"], y=df_control["Ventas_TR"], 
+                         mode="lines+markers", name="Ventas TR", 
+                         line=dict(color="#3498db", width=3), marker=dict(size=8)))
+fig1.add_trace(go.Scatter(x=df_control["FECHA"], y=df_control["Banco_Macro"], 
+                         mode="lines+markers", name="Depósito Banco Macro", 
+                         line=dict(color="#2ecc71", width=3), marker=dict(size=8)))
+fig1.update_layout(title="Ventas con Tarjeta vs Depósitos Bancarios",
+                   xaxis_title="Fecha", yaxis_title="Monto ($)",
+                   height=450, template="plotly_white", hovermode="x unified")
+st.plotly_chart(fig1, use_container_width=True)
 
-with tab3:
-    if not efectivo_proc.empty:
-        fig = px.bar(efectivo_proc, x="Monto", y="Cajero", orientation="h", text_auto=True)
-        fig.update_layout(height=500, template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(efectivo_proc, use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay datos de Efectivo disponibles")
+# GRÁFICO 2: Diferencia diaria de conciliación
+st.markdown('<div class="section-title">⚖️ DIFERENCIA DIARIA</div>', unsafe_allow_html=True)
 
-with tab4:
-    if not tarjetas_proc.empty:
-        fig = px.line(tarjetas_proc, x="FECHA", y="MONTO", markers=True)
-        fig.update_layout(height=450, template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(tarjetas_proc, use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay datos de Tarjetas disponibles")
+colors = ["#e74c3c" if x < 0 else "#2ecc71" for x in df_control["Diferencia"]]
+fig2 = go.Figure()
+fig2.add_trace(go.Bar(x=df_control["FECHA"], y=df_control["Diferencia"], 
+                      marker_color=colors, name="Diferencia"))
+fig2.add_hline(y=0, line_dash="dash", line_color="black")
+fig2.update_layout(title="Diferencia entre Ventas y Depósitos Bancarios",
+                   xaxis_title="Fecha", yaxis_title="Diferencia ($)",
+                   height=400, template="plotly_white")
+st.plotly_chart(fig2, use_container_width=True)
 
-with tab5:
-    if df_banco is not None and not df_banco.empty:
-        st.dataframe(df_banco, use_container_width=True)
-    else:
-        st.info("No hay datos del Banco Macro disponibles")
+# GRÁFICO 3: Top Cajeros por Efectivo
+st.markdown('<div class="section-title">👥 TOP CAJEROS POR EFECTIVO</div>', unsafe_allow_html=True)
+
+top_efectivo = df_efectivo.nlargest(10, "MONTO")
+fig3 = px.bar(top_efectivo, x="MONTO", y="ID CAJERO", orientation="h", text_auto=True,
+              title="Top 10 Cajeros - Monto de Efectivo Rendido",
+              color="MONTO", color_continuous_scale="Viridis")
+fig3.update_layout(height=450, template="plotly_white", xaxis_title="Monto ($)", yaxis_title="Cajero")
+st.plotly_chart(fig3, use_container_width=True)
+
+# GRÁFICO 4: Evolución Payway
+st.markdown('<div class="section-title">💳 EVOLUCIÓN PAYWAY</div>', unsafe_allow_html=True)
+
+payway_diario = df_payway.groupby("FECHA").agg({
+    "MONTO_BRUTO": "sum",
+    "MONTO_NETO": "sum"
+}).reset_index()
+
+fig4 = go.Figure()
+fig4.add_trace(go.Scatter(x=payway_diario["FECHA"], y=payway_diario["MONTO_BRUTO"], 
+                         mode="lines+markers", name="Monto Bruto", line=dict(color="#3498db")))
+fig4.add_trace(go.Scatter(x=payway_diario["FECHA"], y=payway_diario["MONTO_NETO"], 
+                         mode="lines+markers", name="Monto Neto", line=dict(color="#2ecc71")))
+fig4.update_layout(title="Evolución de Ventas Payway (Bruto vs Neto)",
+                   xaxis_title="Fecha", yaxis_title="Monto ($)",
+                   height=450, template="plotly_white")
+st.plotly_chart(fig4, use_container_width=True)
+
+# GRÁFICO 5: Distribución de Medios de Pago
+st.markdown('<div class="section-title">🥧 DISTRIBUCIÓN DE PAGOS</div>', unsafe_allow_html=True)
+
+col5a, col5b = st.columns(2)
+
+with col5a:
+    medios = pd.DataFrame({
+        "Medio": ["Tarjeta", "Efectivo"],
+        "Monto": [total_tarjetas, total_efectivo]
+    })
+    fig5 = px.pie(medios, values="Monto", names="Medio", hole=0.4,
+                  title="Distribución Tarjeta vs Efectivo",
+                  color_discrete_sequence=["#3498db", "#2ecc71"])
+    fig5.update_traces(textinfo="percent+label")
+    st.plotly_chart(fig5, use_container_width=True)
+
+with col5b:
+    # Evolución del ticket promedio
+    ticket_promedio = df_control[df_control["Ventas_TR"] > 0].copy()
+    ticket_promedio["Ticket_Promedio"] = ticket_promedio["Ventas_TR"] / 10  # Estimado
+    fig6 = px.line(ticket_promedio, x="FECHA", y="Ticket_Promedio", markers=True,
+                   title="Ticket Promedio Estimado por Día",
+                   color_discrete_sequence=["#e74c3c"])
+    fig6.update_layout(height=400, template="plotly_white", yaxis_title="Ticket Promedio ($)")
+    st.plotly_chart(fig6, use_container_width=True)
+
+# GRÁFICO 6: Tabla de conciliación con formato
+st.markdown('<div class="section-title">📋 TABLA DE CONCILIACIÓN</div>', unsafe_allow_html=True)
+
+tabla_conciliacion = df_control[["FECHA", "Ventas_TR", "Banco_Macro", "Diferencia", "%_Conciliacion"]].copy()
+tabla_conciliacion["FECHA"] = tabla_conciliacion["FECHA"].dt.strftime("%d/%m/%Y")
+tabla_conciliacion.columns = ["Fecha", "Ventas TR", "Depósito Banco", "Diferencia", "% Conciliación"]
+tabla_conciliacion["Estado"] = tabla_conciliacion["% Conciliación"].apply(
+    lambda x: "✅ OK" if x >= 98 else ("⚠️ Revisar" if x >= 95 else "❌ Alerta")
+)
+
+st.dataframe(tabla_conciliacion, use_container_width=True, hide_index=True)
 
 # ============================================
 # FOOTER
@@ -334,6 +308,6 @@ with tab5:
 st.markdown("---")
 st.markdown(f"""
     <div style="text-align: center; color: #999; font-size: 0.8rem; padding: 1rem;">
-        📊 Dashboard | {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+        📊 Dashboard actualizado automáticamente | {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
     </div>
 """, unsafe_allow_html=True)
