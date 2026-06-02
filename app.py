@@ -7,6 +7,55 @@ import re
 import numpy as np
 
 # ============================================
+# AUTENTICACIÓN
+# ============================================
+
+def autenticar():
+    if "autenticado" not in st.session_state:
+        st.session_state.autenticado = False
+
+    if not st.session_state.autenticado:
+        st.set_page_config(page_title="Acceso Restringido", page_icon="🔐")
+
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("""
+                <div style="text-align: center; padding: 3rem 0;">
+                    <h1>🔐 Dashboard de Ventas</h1>
+                    <p style="color: #666;">Acceso autorizado solamente</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            if "intentos" not in st.session_state:
+                st.session_state.intentos = 0
+
+            if st.session_state.intentos >= 5:
+                st.error("❌ Demasiados intentos. Acceso bloqueado temporalmente.")
+                return False
+
+            with st.form("login_form"):
+                usuario = st.text_input("👤 Usuario")
+                password = st.text_input("🔒 Contraseña", type="password")
+                submitted = st.form_submit_button("🔓 Ingresar", use_container_width=True)
+
+                if submitted:
+                    USUARIO_CORRECTO = st.secrets.get("USUARIO", "admin")
+                    PASSWORD_CORRECTO = st.secrets.get("PASSWORD", "admin123")
+
+                    if usuario == USUARIO_CORRECTO and password == PASSWORD_CORRECTO:
+                        st.session_state.autenticado = True
+                        st.session_state.intentos = 0
+                        st.rerun()
+                    else:
+                        st.session_state.intentos += 1
+                        st.error(f"Credenciales incorrectas. Intentos restantes: {5 - st.session_state.intentos}")
+        return False
+    return True
+
+if not autenticar():
+    st.stop()
+
+# ============================================
 # CONFIGURACIÓN DE PÁGINA
 # ============================================
 st.set_page_config(page_title="Super Dashboard Ventas", layout="wide")
@@ -129,7 +178,7 @@ with st.spinner("🔄 Cargando datos desde Google Sheets..."):
 st.success("✅ Datos cargados correctamente")
 
 # ============================================
-# PROCESAMIENTO DE DATOS
+# PROCESAMIENTO DE DATOS (VERSIÓN CORREGIDA)
 # ============================================
 
 # Procesar Control (conciliación diaria)
@@ -137,18 +186,47 @@ df_control_proc = df_control.copy()
 df_control_proc = df_control_proc[df_control_proc["Columna 1"].astype(str).str.contains("2026-05", na=False)]
 df_control_proc["FECHA"] = pd.to_datetime(df_control_proc["Columna 1"], errors='coerce')
 df_control_proc = df_control_proc.dropna(subset=["FECHA"])
-df_control_proc["Ventas_TR"] = pd.to_numeric(df_control_proc["SUM of TR"], errors='coerce').fillna(0)
-df_control_proc["Payway_Bruto"] = pd.to_numeric(df_control_proc["Payway Bruto"], errors='coerce').fillna(0)
-df_control_proc["Banco_Macro"] = pd.to_numeric(df_control_proc["Banco Macro"], errors='coerce').fillna(0)
+
+# Buscar las columnas correctas por posición o nombre alternativo
+columnas_disponibles = df_control_proc.columns.tolist()
+
+# Identificar columna de TR (ventas tarjeta)
+col_tr = None
+for col in columnas_disponibles:
+    if "TR" in str(col) or "tarjeta" in str(col).lower():
+        col_tr = col
+        break
+if col_tr is None and len(df_control_proc.columns) > 3:
+    col_tr = df_control_proc.columns[3]  # Usar cuarta columna
+
+# Identificar columna de Banco Macro
+col_banco = None
+for col in columnas_disponibles:
+    if "Banco" in str(col) or "MACRO" in str(col).upper():
+        col_banco = col
+        break
+if col_banco is None and len(df_control_proc.columns) > 14:
+    col_banco = df_control_proc.columns[14]  # Usar columna 15
+
+if col_tr:
+    df_control_proc["Ventas_TR"] = pd.to_numeric(df_control_proc[col_tr], errors='coerce').fillna(0)
+else:
+    df_control_proc["Ventas_TR"] = 0
+
+if col_banco:
+    df_control_proc["Banco_Macro"] = pd.to_numeric(df_control_proc[col_banco], errors='coerce').fillna(0)
+else:
+    df_control_proc["Banco_Macro"] = 0
+
 df_control_proc["Diferencia"] = df_control_proc["Ventas_TR"] - df_control_proc["Banco_Macro"]
-df_control_proc["%_Conciliacion"] = (df_control_proc["Banco_Macro"] / df_control_proc["Ventas_TR"] * 100).round(1)
+df_control_proc["%_Conciliacion"] = (df_control_proc["Banco_Macro"] / df_control_proc["Ventas_TR"] * 100).round(1).fillna(0)
 df_control_proc["Estado"] = df_control_proc["%_Conciliacion"].apply(
     lambda x: "✅ OK" if x >= 98 else ("⚠️ Parcial" if x >= 95 else "❌ Revisar")
 )
 
 # Procesar Payway
 df_payway_proc = df_payway.copy()
-if not df_payway_proc.empty:
+if not df_payway_proc.empty and len(df_payway_proc) > 1:
     df_payway_proc.columns = df_payway_proc.iloc[0]
     df_payway_proc = df_payway_proc[1:].reset_index(drop=True)
     df_payway_proc["FECHA"] = pd.to_datetime(df_payway_proc["FECHA DE VENTA"], errors='coerce')
@@ -159,7 +237,7 @@ if not df_payway_proc.empty:
 
 # Procesar Control Tarjetas
 df_tarjetas_proc = df_control_tarjetas.copy()
-if not df_tarjetas_proc.empty:
+if not df_tarjetas_proc.empty and len(df_tarjetas_proc) > 1:
     df_tarjetas_proc.columns = df_tarjetas_proc.iloc[0]
     df_tarjetas_proc = df_tarjetas_proc[1:].reset_index(drop=True)
     df_tarjetas_proc = df_tarjetas_proc[df_tarjetas_proc["Columna 1"].astype(str).str.contains("2026-05", na=False)]
@@ -169,7 +247,7 @@ if not df_tarjetas_proc.empty:
 
 # Procesar Control Efectivo
 df_efectivo_proc = df_control_efectivo.copy()
-if not df_efectivo_proc.empty:
+if not df_efectivo_proc.empty and len(df_efectivo_proc) > 1:
     df_efectivo_proc.columns = df_efectivo_proc.iloc[0]
     df_efectivo_proc = df_efectivo_proc[1:].reset_index(drop=True)
     df_efectivo_proc = df_efectivo_proc[~df_efectivo_proc["ID CAJERO"].astype(str).str.contains("Total", na=False)]
@@ -211,32 +289,32 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 
 # ==================== TAB 1: CONCILIACIÓN DIARIA ====================
 with tab1:
-    st.markdown("### 📈 Evolución Diaria de Ventas vs Depósitos")
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_control_proc["FECHA"], y=df_control_proc["Ventas_TR"], 
-                            mode="lines+markers", name="Ventas TR", line=dict(color="#3498db", width=3)))
-    fig.add_trace(go.Scatter(x=df_control_proc["FECHA"], y=df_control_proc["Banco_Macro"], 
-                            mode="lines+markers", name="Depósito Banco", line=dict(color="#2ecc71", width=3)))
-    fig.update_layout(height=450, template="plotly_white", xaxis_title="Fecha", yaxis_title="Monto ($)")
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.markdown("### 📊 Tabla de Conciliación Diaria")
-    mostrar = df_control_proc[["FECHA", "Ventas_TR", "Banco_Macro", "Diferencia", "%_Conciliacion", "Estado"]].copy()
-    mostrar["FECHA"] = mostrar["FECHA"].dt.strftime("%d/%m/%Y")
-    mostrar.columns = ["Fecha", "Ventas TR", "Depósito Banco", "Diferencia", "%", "Estado"]
-    st.dataframe(mostrar, use_container_width=True, hide_index=True)
-    
-    # Alertas
-    dias_alerta = df_control_proc[df_control_proc["Estado"] != "✅ OK"]
-    if not dias_alerta.empty:
-        st.warning(f"⚠️ {len(dias_alerta)} días con diferencias en conciliación")
-        for _, row in dias_alerta.iterrows():
-            st.markdown(f'<div class="warning-card">📅 {row["FECHA"].strftime("%d/%m/%Y")} - Diferencia:  - {row["Estado"]}</div>', unsafe_allow_html=True)
+    if not df_control_proc.empty and len(df_control_proc) > 0:
+        st.markdown("### 📈 Evolución Diaria de Ventas vs Depósitos")
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_control_proc["FECHA"], y=df_control_proc["Ventas_TR"], 
+                                mode="lines+markers", name="Ventas TR", line=dict(color="#3498db", width=3)))
+        fig.add_trace(go.Scatter(x=df_control_proc["FECHA"], y=df_control_proc["Banco_Macro"], 
+                                mode="lines+markers", name="Depósito Banco", line=dict(color="#2ecc71", width=3)))
+        fig.update_layout(height=450, template="plotly_white", xaxis_title="Fecha", yaxis_title="Monto ($)")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.markdown("### 📊 Tabla de Conciliación Diaria")
+        mostrar = df_control_proc[["FECHA", "Ventas_TR", "Banco_Macro", "Diferencia", "%_Conciliacion", "Estado"]].copy()
+        mostrar["FECHA"] = mostrar["FECHA"].dt.strftime("%d/%m/%Y")
+        mostrar.columns = ["Fecha", "Ventas TR", "Depósito Banco", "Diferencia", "%", "Estado"]
+        st.dataframe(mostrar, use_container_width=True, hide_index=True)
+        
+        dias_alerta = df_control_proc[df_control_proc["Estado"] != "✅ OK"]
+        if not dias_alerta.empty:
+            st.warning(f"⚠️ {len(dias_alerta)} días con diferencias en conciliación")
+    else:
+        st.info("No hay datos de conciliación disponibles")
 
 # ==================== TAB 2: ANÁLISIS PAYWAY ====================
 with tab2:
-    if not df_payway_proc.empty:
+    if not df_payway_proc.empty and len(df_payway_proc) > 0:
         st.markdown("### 💳 Resumen Payway")
         col_p1, col_p2, col_p3 = st.columns(3)
         with col_p1:
@@ -257,7 +335,7 @@ with tab2:
 
 # ==================== TAB 3: CONTROL EFECTIVO ====================
 with tab3:
-    if not df_efectivo_proc.empty:
+    if not df_efectivo_proc.empty and len(df_efectivo_proc) > 0:
         st.markdown("### 💵 Efectivo Rendido por Cajero")
         fig = px.bar(df_efectivo_proc, x="SUM of EFECTIVO RENDIDO", y="ID CAJERO", 
                     orientation="h", text_auto=True, color="SUM of EFECTIVO RENDIDO",
@@ -272,7 +350,7 @@ with tab3:
 
 # ==================== TAB 4: CONTROL TARJETAS ====================
 with tab4:
-    if not df_tarjetas_proc.empty:
+    if not df_tarjetas_proc.empty and len(df_tarjetas_proc) > 0:
         st.markdown("### 💳 Ventas con Tarjeta por Día")
         fig = px.bar(df_tarjetas_proc, x="FECHA", y="SUM of TR", text_auto=True,
                     color="SUM of TR", color_continuous_scale="Blues")
@@ -289,7 +367,7 @@ with tab4:
 
 # ==================== TAB 5: BANCO MACRO ====================
 with tab5:
-    if not df_banco_macro.empty:
+    if not df_banco_macro.empty and len(df_banco_macro) > 1:
         st.markdown("### 🏦 Movimientos Banco Macro")
         df_banco = df_banco_macro.copy()
         df_banco.columns = df_banco.iloc[0]
@@ -345,11 +423,11 @@ with tab6:
     else:
         st.markdown('<div class="success-card">✅ Conciliación dentro de parámetros normales.</div>', unsafe_allow_html=True)
     
-    # Top 3 días con mayor diferencia
-    st.markdown("#### 📅 Top 3 Días con Mayor Diferencia")
-    top_diferencia = df_control_proc.nlargest(3, "Diferencia")[["FECHA", "Ventas_TR", "Banco_Macro", "Diferencia"]]
-    top_diferencia["FECHA"] = top_diferencia["FECHA"].dt.strftime("%d/%m/%Y")
-    st.dataframe(top_diferencia, use_container_width=True, hide_index=True)
+    if not df_control_proc.empty:
+        st.markdown("#### 📅 Top 3 Días con Mayor Diferencia")
+        top_diferencia = df_control_proc.nlargest(3, "Diferencia")[["FECHA", "Ventas_TR", "Banco_Macro", "Diferencia"]]
+        top_diferencia["FECHA"] = top_diferencia["FECHA"].dt.strftime("%d/%m/%Y")
+        st.dataframe(top_diferencia, use_container_width=True, hide_index=True)
 
 # ============================================
 # FOOTER
